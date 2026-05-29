@@ -63,6 +63,11 @@ signing {
     }
 }
 
+// Gradle 8.x requires explicit ordering between Sign tasks and consumers of their .asc outputs.
+tasks.withType<AbstractPublishToMaven>().configureEach {
+    mustRunAfter(tasks.withType<Sign>())
+}
+
 repositories {
     google()
     mavenCentral()

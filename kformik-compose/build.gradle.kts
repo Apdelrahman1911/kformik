@@ -62,6 +62,10 @@ afterEvaluate {
             sign(publishing.publications["release"])
         }
     }
+
+    tasks.withType<AbstractPublishToMaven>().configureEach {
+        mustRunAfter(tasks.withType<Sign>())
+    }
 }
 
 android {

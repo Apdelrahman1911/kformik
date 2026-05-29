@@ -98,3 +98,7 @@ signing {
         sign(publishing.publications)
     }
 }
+
+tasks.withType<AbstractPublishToMaven>().configureEach {
+    mustRunAfter(tasks.withType<Sign>())
+}
