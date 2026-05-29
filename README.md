@@ -1,5 +1,10 @@
 # Kformik
 
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.apdelrahman1911/kformik.svg?label=Maven%20Central&color=blue)](https://central.sonatype.com/artifact/io.github.apdelrahman1911/kformik)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF.svg?logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![CI](https://github.com/Apdelrahman1911/kformik/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Apdelrahman1911/kformik/actions/workflows/ci.yml)
+
 Kotlin Multiplatform port of [Formik](https://github.com/jaredpalmer/formik). Same form-state engine, written in Kotlin, with no opinion about your UI layer. Drop it into a coroutine, a Jetpack Compose screen, or a SwiftUI view and read state from a `StateFlow`.
 
 ```kotlin

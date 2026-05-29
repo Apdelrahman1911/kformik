@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  jvm-android:
+    name: JVM + Android + KSP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Tests + assemble
+        run: |
+          ./gradlew \
+            :kformik:jvmTest :kformik:testDebugUnitTest :kformik:testReleaseUnitTest \
+            :kformik-compose:testReleaseUnitTest :kformik-compose:assembleRelease \
+            :kformik-ksp:test \
+            :sample-android-app:assembleDebug \
+            :examples:compileKotlin \
+            --warning-mode=all
+
+      - name: publishToMavenLocal (unsigned)
+        # The signing block is inert without SIGNING_KEY / SIGNING_PASSWORD, so this
+        # verifies the publication wiring without needing any secret in CI.
+        run: ./gradlew publishToMavenLocal --warning-mode=all
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-ubuntu
+          path: '**/build/reports/tests/'
+          retention-days: 7
+
+  ios:
+    name: iOS Simulator (arm64)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: iOS Simulator tests
+        run: ./gradlew :kformik:iosSimulatorArm64Test --warning-mode=all
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-macos
+          path: '**/build/reports/tests/'
+          retention-days: 7

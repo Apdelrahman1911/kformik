@@ -2,30 +2,29 @@
 
 All notable changes are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.0] — 2026-05-29
 
-### Changed
+First public release. The library went through several private iterations (1.0.x – 1.3.x, summarised below); 1.4.0 is the first cut published to Maven Central under `io.github.apdelrahman1911`.
 
-- Maven group ID is `io.github.apdelrahman1911`. Single source of truth: `gradle.properties` → `kformikGroup`.
-- POM metadata (developers, SCM, project URL) point at `github.com/Apdelrahman1911/kformik`. License declared as Apache-2.0 (SPDX).
-- Sonatype + signing credentials are now read from uppercase `SONATYPE_USERNAME` / `SONATYPE_PASSWORD` / `SIGNING_KEY` / `SIGNING_PASSWORD` (env or `~/.gradle/gradle.properties`). Legacy lowercase keys still work.
-- README install snippets use `io.github.apdelrahman1911:*:1.4.0`.
+### Features
 
-### Added
+- **Core (KMP)** — UI-independent form-state engine. `commonMain` depends only on `kotlinx-coroutines-core`. Reactive state via `StateFlow<FormikState<V>>`. Targets JVM 17+, Android (`minSdk 21`), iOS (`iosX64`, `iosArm64`, `iosSimulatorArm64`).
+- **Schema validation** — `formSchema { field("email") { required(); email() } }` DSL with built-in rules (`required`, `minLength`, `maxLength`, `email`, `pattern`, `min`, `max`, `custom`) and cross-field support. `failFast = false` collects every failing rule per field. Schema is introspectable: `isRequired(path)`, `requiredFields()`, `fieldInfo(path)` — useful for rendering required-field markers without running validation.
+- **Async validation + submit** — `validate` and `onSubmit` are both `suspend` functions with standard structured-concurrency semantics.
+- **Field arrays** — `form.array(path)` with `push` / `pop` / `unshift` / `insert` / `remove` / `replace` / `swap` / `move`. Touched + errors arrays stay aligned across structural mutations.
+- **Compose adapter** — `kformik-compose` for Android (Jetpack Compose). `rememberFormik(...)` returns a `ComposeFormik<V>` with snapshot-friendly `State<...>` derivations.
+- **iOS / SwiftUI bridge** — `FormikIosBridge` in `iosMain` exposing Swift-friendly `observe` / `snapshot` / setters / `submit` / `resetForm` / `close`.
+- **KSP processor (experimental)** — `kformik-ksp`. Annotate a `data class` with `@FormValues`; the processor generates `<Name>Paths` (compile-checked path constants) and `<Name>Updater : ValuesUpdater<Name>` so you can drop the hand-rolled `when (path)` boilerplate. Flat and nested data classes covered.
+- **Nested and bracket paths** — `MapValuesUpdater` parses `user.address.city` and `tags[1]` uniformly.
+- **Formik parity** — submit-touches-all, `validateOnChange` / `validateOnBlur` / `validateOnMount`, `dirty`, `isValid`, `submitCount`, `setStatus`, `resetForm`.
 
-- Apache-2.0 `LICENSE` file at the repo root.
+### Coordinates
 
-## [1.4.0]
+- `io.github.apdelrahman1911:kformik:1.4.0`
+- `io.github.apdelrahman1911:kformik-compose:1.4.0`
+- `io.github.apdelrahman1911:kformik-ksp:1.4.0`
 
-### Added
-
-- KSP `ValuesUpdater` generation. `@FormValues data class` now produces a `<Name>Updater : ValuesUpdater<Name>` alongside the existing `<Name>Paths` constants. Flat and nested data classes supported.
-- KSP end-to-end compile testing (via `dev.zacsweers.kctfork:ksp`).
-- `FormSchema` requiredness introspection: `isRequired(path)`, `requiredFields()`, `fieldInfo(path)`. No validation pass needed.
-- `failFast = false` schema mode: collect every failing rule per field via `validateAll(values)` / `validateAllField(values, path)`. Available at the schema level (`formSchema(failFast = false) { … }`) and per-field (`field("p", failFast = false) { … }`).
-- Opt-in Robolectric Compose UI tests at `sample-android-app/src/robolectricTest/`, gated behind `-PwithRobolectric=true`.
-- POM metadata wired for Maven Central. `signing` plugin present but inert until `SIGNING_KEY` / `SIGNING_PASSWORD` are set.
-- Release notes in `docs/RELEASE_PROCESS.md`.
+Apache-2.0 licensed. Sources jar, Dokka HTML javadoc jar, and `.asc` signatures shipped on every artifact.
 
 ## [1.3.1]
 
