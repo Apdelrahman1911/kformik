@@ -1,0 +1,65 @@
+package io.kformik
+
+import kotlinx.coroutines.CoroutineScope
+
+/**
+ * The full configuration for a [FormikController]. Equivalent to Formik's `FormikConfig<Values>`,
+ * with React-specific bits stripped out (render slots, `innerRef`, etc.).
+ */
+data class FormikConfig<V>(
+    /** Required: the initial values. Snapshot is taken on construction. */
+    val initialValues: V,
+
+    /** Initial errors. Defaults to empty. */
+    val initialErrors: FormikErrors = FormikErrors.Empty,
+
+    /** Initial touched state. Defaults to empty. */
+    val initialTouched: FormikTouched = FormikTouched.Empty,
+
+    /** Initial status. Defaults to null. */
+    val initialStatus: Any? = null,
+
+    /** Top-level validator. Returns the full error map (or empty if valid). */
+    val validate: (suspend (V) -> FormikErrors)? = null,
+
+    /** Schema-style validator. Composed with [validate] and per-field validators. */
+    val schemaValidator: SchemaValidator<V>? = null,
+
+    /** Required: submit handler. Always suspending. */
+    val onSubmit: FormikSubmitHandler<V>,
+
+    /** Optional reset handler. Awaited before the reset is committed. */
+    val onReset: FormikResetHandler<V>? = null,
+
+    /** Whether changes (`setFieldValue`, `setValues`) trigger validation. Default `true`. */
+    val validateOnChange: Boolean = true,
+
+    /** Whether blur (`setFieldTouched`, `setTouched`) triggers validation. Default `true`. */
+    val validateOnBlur: Boolean = true,
+
+    /** Whether to validate on construction. Default `false`. */
+    val validateOnMount: Boolean = false,
+
+    /** Whether [FormikController.reinitialize] should auto-reset and re-snapshot. Default `false`. */
+    val enableReinitialize: Boolean = false,
+
+    /**
+     * Optional [CoroutineScope] that owns all background work (validation, submit, etc.).
+     * If null, the controller creates its own scope using [kotlinx.coroutines.SupervisorJob]
+     * and [kotlinx.coroutines.Dispatchers.Default]. Closing the controller cancels this scope.
+     *
+     * Pass a `ViewModelScope` on Android or a custom scope on iOS/JVM to let the lifecycle
+     * cancel in-flight work automatically.
+     */
+    val coroutineScope: CoroutineScope? = null,
+
+    /**
+     * Strategy for reading/writing nested fields inside [V]. If null, the controller picks a
+     * sensible default: [MapValuesUpdater] when [initialValues] is a [Map], otherwise an
+     * identity updater that only supports flat top-level field names (any path with a dot
+     * will throw).
+     *
+     * For typed `data class` values, provide a hand-written or codegen'd updater.
+     */
+    val valuesUpdater: ValuesUpdater<V>? = null,
+)

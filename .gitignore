@@ -1,0 +1,45 @@
+# --- Gradle ---
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# --- Kotlin ---
+.kotlin/
+*.kotlin_module
+
+# --- IntelliJ / Android Studio ---
+.idea/
+*.iml
+*.ipr
+*.iws
+captures/
+
+# --- VS Code ---
+.vscode/
+.fleet/
+
+# --- macOS ---
+.DS_Store
+
+# --- Logs / temp ---
+*.log
+*.tmp
+*.swp
+hs_err_pid*
+
+# --- Credentials & signing material ---
+# Real credentials live in ~/.gradle/gradle.properties (user-scoped).
+# These patterns block any accidental check-in inside the repo.
+*signing*.key
+*signing*.asc
+*.gpg
+gradle.properties.local
+secrets.properties
+
+# --- Working notes (not for publication) ---
+.private/
+
+# --- Documentation builds ---
+docs/_build/
