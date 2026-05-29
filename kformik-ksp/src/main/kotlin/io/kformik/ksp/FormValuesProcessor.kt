@@ -1,5 +1,6 @@
 package io.kformik.ksp
 
+import com.google.devtools.ksp.processing.Dependencies
 import com.google.devtools.ksp.processing.Resolver
 import com.google.devtools.ksp.processing.SymbolProcessor
 import com.google.devtools.ksp.processing.SymbolProcessorEnvironment
@@ -7,6 +8,7 @@ import com.google.devtools.ksp.processing.SymbolProcessorProvider
 import com.google.devtools.ksp.symbol.ClassKind
 import com.google.devtools.ksp.symbol.KSAnnotated
 import com.google.devtools.ksp.symbol.KSClassDeclaration
+import com.google.devtools.ksp.symbol.KSFile
 import com.google.devtools.ksp.symbol.KSPropertyDeclaration
 
 /**
@@ -78,8 +80,9 @@ class FormValuesProcessor(private val env: SymbolProcessorEnvironment) : SymbolP
         val name = decl.simpleName.asString()
         val pathsName = "${name}Paths"
 
+        val originating = collectOriginatingFiles(decl, byName)
         val file = env.codeGenerator.createNewFile(
-            dependencies = com.google.devtools.ksp.processing.Dependencies(aggregating = false),
+            dependencies = Dependencies(aggregating = false, *originating.toTypedArray()),
             packageName = pkg,
             fileName = pathsName,
         )
@@ -130,8 +133,9 @@ class FormValuesProcessor(private val env: SymbolProcessorEnvironment) : SymbolP
         val name = decl.simpleName.asString()
         val updaterName = "${name}Updater"
 
+        val originating = collectOriginatingFiles(decl, byName)
         val file = env.codeGenerator.createNewFile(
-            dependencies = com.google.devtools.ksp.processing.Dependencies(aggregating = false),
+            dependencies = Dependencies(aggregating = false, *originating.toTypedArray()),
             packageName = pkg,
             fileName = updaterName,
         )
@@ -214,6 +218,46 @@ class FormValuesProcessor(private val env: SymbolProcessorEnvironment) : SymbolP
         val nestedSimpleName: String?,
         val nullable: Boolean,
     )
+
+    /**
+     * Collect every source file that the generated outputs for [decl] depend on.
+     *
+     * Returned set: `decl`'s own containing file, plus the containing files of every
+     * transitively-reachable nested `@FormValues` declaration that the generated `*Paths` /
+     * `*Updater` for [decl] embeds. Passing this set into `Dependencies(aggregating = false, …)`
+     * gives KSP precise per-file invalidation: changing one annotated source file regenerates
+     * exactly the outputs whose embedded shape depends on it, nothing more.
+     *
+     * Concretely:
+     *  - Flat `@FormValues data class LoginValues(...)` → set is `{ LoginValues.kt }`.
+     *    Touching the file regenerates `LoginValuesPaths.kt` + `LoginValuesUpdater.kt` only.
+     *  - Nested `UserValues` referencing `AddressValues` → for `UserValues`'s outputs, the set
+     *    is `{ UserValues.kt, AddressValues.kt }`. Touching `AddressValues.kt` regenerates
+     *    `UserValuesPaths` + `UserValuesUpdater` (their content embeds Address's shape) AND
+     *    `AddressValuesPaths` + `AddressValuesUpdater`. Touching `UserValues.kt` regenerates
+     *    only `UserValues`'s pair.
+     *
+     * Cycles between `@FormValues` types are short-circuited by `visited`.
+     */
+    private fun collectOriginatingFiles(
+        decl: KSClassDeclaration,
+        byName: Map<String, KSClassDeclaration>,
+        visited: MutableSet<String> = mutableSetOf(),
+    ): Set<KSFile> {
+        val qn = decl.qualifiedName?.asString() ?: return emptySet()
+        if (!visited.add(qn)) return emptySet()
+        val out = mutableSetOf<KSFile>()
+        decl.containingFile?.let(out::add)
+        for (prop in decl.getAllProperties()) {
+            val typeDecl = prop.type.resolve().declaration as? KSClassDeclaration ?: continue
+            val nestedQn = typeDecl.qualifiedName?.asString() ?: continue
+            val nested = byName[nestedQn] ?: continue
+            if (nested.classKind == ClassKind.CLASS) {
+                out += collectOriginatingFiles(nested, byName, visited)
+            }
+        }
+        return out
+    }
 
     private fun emitProperties(
         w: java.io.BufferedWriter,

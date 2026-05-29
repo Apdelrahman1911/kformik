@@ -166,6 +166,77 @@ class FormValuesProcessorCompileTest {
         assertEquals(0, pathsFile.size)
     }
 
+    // ────────────────────────────────────── multi-file nested + file-scoped deps
+
+    /**
+     * Multi-file nested case: AddressValues lives in `address.kt`, UserValues references it from
+     * `user.kt`. This exercises the cross-file path that uses
+     * [FormValuesProcessor.collectOriginatingFiles] to declare per-file KSP `Dependencies`.
+     *
+     * What we verify here:
+     *  - Both annotated classes generate their `*Paths` + `*Updater`.
+     *  - `UserValuesPaths` correctly embeds `AddressValues`' shape (the nested object scope).
+     *  - The compilation succeeds end-to-end (KSP would error if a malformed `Dependencies` were
+     *    passed — e.g., aggregating-false with an empty file set on KSP2 is rejected as
+     *    "non-isolating" output, so reaching ExitCode.OK confirms `Dependencies(aggregating = false,
+     *    decl.containingFile, nested.containingFile)` was constructed correctly).
+     *
+     * What this test does NOT verify (and cannot, given kctfork's API surface):
+     *  - That on incremental re-compile, touching only `address.kt` re-invalidates only the
+     *    Address/User outputs and nothing else. That guarantee is structural — it follows from the
+     *    KSP contract for `Dependencies(aggregating = false, *files)` and is documented on
+     *    [FormValuesProcessor.collectOriginatingFiles].
+     */
+    @Test
+    fun multiFile_nested_compilesWithPerFileDependencies() {
+        val address = SourceFile.kotlin(
+            "address.kt",
+            """
+            package app
+
+            import io.kformik.ksp.FormValues
+
+            @FormValues
+            data class AddressValues(val city: String, val country: String)
+            """.trimIndent()
+        )
+        val user = SourceFile.kotlin(
+            "user.kt",
+            """
+            package app
+
+            import io.kformik.ksp.FormValues
+
+            @FormValues
+            data class UserValues(val name: String, val address: AddressValues)
+            """.trimIndent()
+        )
+        val (comp, result) = runCompile(address, user)
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode)
+
+        // All four outputs present.
+        val addressPaths = comp.generatedFile("app", "AddressValuesPaths.kt").readText()
+        val addressUpdater = comp.generatedFile("app", "AddressValuesUpdater.kt").readText()
+        val userPaths = comp.generatedFile("app", "UserValuesPaths.kt").readText()
+        val userUpdater = comp.generatedFile("app", "UserValuesUpdater.kt").readText()
+
+        // Address's outputs name the address fields only.
+        assertTrue(addressPaths.contains("object AddressValuesPaths {"))
+        assertTrue(Regex("""const val city: String = "city"""").containsMatchIn(addressPaths))
+
+        // User's Paths embeds the address sub-object with prefixed paths.
+        assertTrue(userPaths.contains("object UserValuesPaths {"))
+        assertTrue(userPaths.contains("object address {"))
+        assertTrue(Regex("""const val city: String = "address\.city"""").containsMatchIn(userPaths))
+
+        // User's Updater delegates into AddressValuesUpdater for the nested path.
+        assertTrue(userUpdater.contains("AddressValuesUpdater.getAt(values.address"))
+        assertTrue(userUpdater.contains("AddressValuesUpdater.setAt(values.address"))
+
+        // Address's updater stands alone.
+        assertTrue(addressUpdater.contains("object AddressValuesUpdater"))
+    }
+
     // ───────────────────────────────────────────────────── service-provider wiring
 
     @Test

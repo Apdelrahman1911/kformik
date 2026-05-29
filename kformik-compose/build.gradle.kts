@@ -1,6 +1,7 @@
 plugins {
+    kotlin("multiplatform")
     id("com.android.library")
-    kotlin("android")
+    id("org.jetbrains.compose")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.dokka")
     `maven-publish`
@@ -9,62 +10,33 @@ plugins {
 
 // group + version inherited from the root project (see root build.gradle.kts).
 
-afterEvaluate {
-    publishing {
-        publications {
-            create<MavenPublication>("release") {
-                from(components.findByName("release"))
-                groupId = rootProject.group.toString()
-                artifactId = "kformik-compose"
-                version = rootProject.version.toString()
-                artifact(tasks.register<Jar>("releaseJavadocJar") {
-                    dependsOn("dokkaHtml")
-                    archiveClassifier.set("javadoc")
-                    from(layout.buildDirectory.dir("dokka/html"))
-                })
-                pom {
-                    name.set("Kformik Compose")
-                    description.set("Jetpack Compose adapter for Kformik — bind form state into Composables.")
-                    url.set("https://github.com/Apdelrahman1911/kformik")
-                    licenses {
-                        license {
-                            name.set("Apache-2.0")
-                            url.set("https://www.apache.org/licenses/LICENSE-2.0")
-                            distribution.set("repo")
-                        }
-                    }
-                    developers {
-                        developer {
-                            id.set("apdelrahman1911")
-                            name.set("Abdelrahman Fahmy")
-                            email.set("abdelrahmanfahmy.dev@gmail.com")
-                        }
-                    }
-                    scm {
-                        url.set("https://github.com/Apdelrahman1911/kformik")
-                        connection.set("scm:git:https://github.com/Apdelrahman1911/kformik.git")
-                        developerConnection.set("scm:git:ssh://git@github.com/Apdelrahman1911/kformik.git")
-                    }
-                }
-            }
-        }
-    }
-    signing {
-        // Credentials read from env vars OR user-scoped ~/.gradle/gradle.properties — never the repo.
-        val signingKey: String? = (findProperty("SIGNING_KEY") as? String)
-            ?: System.getenv("SIGNING_KEY")
-            ?: (findProperty("signingKey") as? String)
-        val signingPassword: String? = (findProperty("SIGNING_PASSWORD") as? String)
-            ?: System.getenv("SIGNING_PASSWORD")
-            ?: (findProperty("signingPassword") as? String)
-        if (signingKey != null && signingPassword != null) {
-            useInMemoryPgpKeys(signingKey, signingPassword)
-            sign(publishing.publications["release"])
-        }
-    }
+kotlin {
+    jvmToolchain(17)
 
-    tasks.withType<AbstractPublishToMaven>().configureEach {
-        mustRunAfter(tasks.withType<Sign>())
+    androidTarget {
+        publishLibraryVariants("release")
+    }
+    jvm()
+    iosX64()
+    iosArm64()
+    iosSimulatorArm64()
+
+    sourceSets {
+        commonMain.dependencies {
+            api(project(":kformik"))
+            implementation(compose.runtime)
+            implementation(compose.runtimeSaveable)
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+        }
+        androidMain.dependencies {
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+        }
+        jvmTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(kotlin("test-junit"))
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+            implementation("junit:junit:4.13.2")
+        }
     }
 }
 
@@ -76,22 +48,64 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
-    kotlinOptions { jvmTarget = "17" }
 }
 
-dependencies {
-    api(project(":kformik"))
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+// Apply POM metadata + signing to every KMP publication (the maven-publish + kotlin("multiplatform")
+// combination creates one publication per target: `kotlinMultiplatform` + `androidRelease` + `jvm`
+// + `iosX64` + `iosArm64` + `iosSimulatorArm64`).
+publishing {
+    publications.withType<MavenPublication>().configureEach {
+        artifact(
+            tasks.register<Jar>("${name}DokkaJar") {
+                dependsOn("dokkaHtml")
+                archiveClassifier.set("javadoc")
+                archiveAppendix.set(this@configureEach.name)
+                from(layout.buildDirectory.dir("dokka/html"))
+            }
+        )
+        pom {
+            name.set("Kformik Compose")
+            description.set("Compose Multiplatform adapter for Kformik — bind form state into shared Composable code (Android, Desktop JVM, iOS).")
+            url.set("https://github.com/Apdelrahman1911/kformik")
+            licenses {
+                license {
+                    name.set("Apache-2.0")
+                    url.set("https://www.apache.org/licenses/LICENSE-2.0")
+                    distribution.set("repo")
+                }
+            }
+            developers {
+                developer {
+                    id.set("apdelrahman1911")
+                    name.set("Abdelrahman Fahmy")
+                    email.set("abdelrahmanfahmy.dev@gmail.com")
+                }
+            }
+            scm {
+                url.set("https://github.com/Apdelrahman1911/kformik")
+                connection.set("scm:git:https://github.com/Apdelrahman1911/kformik.git")
+                developerConnection.set("scm:git:ssh://git@github.com/Apdelrahman1911/kformik.git")
+            }
+        }
+    }
+}
 
-    // Compose runtime (no UI deps — adapter is just state + remember helpers).
-    implementation("androidx.compose.runtime:runtime:1.7.5")
-    implementation("androidx.compose.runtime:runtime-saveable:1.7.5")
+signing {
+    // Credentials read from env vars OR user-scoped ~/.gradle/gradle.properties — never the repo.
+    val signingKey: String? = (findProperty("SIGNING_KEY") as? String)
+        ?: System.getenv("SIGNING_KEY")
+        ?: (findProperty("signingKey") as? String)
+    val signingPassword: String? = (findProperty("SIGNING_PASSWORD") as? String)
+        ?: System.getenv("SIGNING_PASSWORD")
+        ?: (findProperty("signingPassword") as? String)
+    if (signingKey != null && signingPassword != null) {
+        useInMemoryPgpKeys(signingKey, signingPassword)
+        sign(publishing.publications)
+    }
+}
 
-    // Unit-test deps (run via :kformik-compose:testReleaseUnitTest)
-    testImplementation(kotlin("test"))
-    testImplementation(kotlin("test-junit"))
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
-    testImplementation("junit:junit:4.13.2")
+// Gradle 8.x requires explicit ordering between Sign tasks and the AbstractPublishToMaven tasks
+// that consume their .asc outputs across publications.
+tasks.withType<AbstractPublishToMaven>().configureEach {
+    mustRunAfter(tasks.withType<Sign>())
 }

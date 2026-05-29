@@ -1,8 +1,38 @@
-# Compose adapter (`kformik-compose`)
+# Compose Multiplatform adapter (`kformik-compose`)
 
-Jetpack Compose integration for Kformik. **Not** required for the core — Kformik's core has no Compose dependency. This module is a thin, optional adapter.
+Compose integration for Kformik. **Not** required for the core — Kformik's core has no Compose dependency. This module is a thin, optional adapter, distributed as a **Compose Multiplatform** library (Android + Desktop JVM + iOS).
+
+## Supported targets
+
+| Target | Source set | Notes |
+|---|---|---|
+| Android (AAR) | `androidMain` | Jetpack Compose runtime |
+| Desktop JVM | `jvmMain` | Compose for Desktop (compose-jb) |
+| iOS x86_64 | `iosX64Main` | Compose Multiplatform iOS runtime |
+| iOS arm64 | `iosArm64Main` | Compose Multiplatform iOS runtime |
+| iOS Simulator arm64 | `iosSimulatorArm64Main` | Compose Multiplatform iOS runtime |
+| Web / WASM | — | not exposed yet |
+
+The source itself lives in `commonMain` — every target gets identical API.
 
 ## Gradle setup
+
+From a Maven coordinate (recommended):
+
+```kotlin
+// build.gradle.kts (Compose Multiplatform app)
+plugins {
+    kotlin("multiplatform")
+    id("org.jetbrains.compose") version "1.7.3"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
+}
+
+dependencies {
+    commonMainImplementation("io.github.apdelrahman1911:kformik-compose:1.5.0")
+}
+```
+
+From within the Kformik repo:
 
 ```kotlin
 // settings.gradle.kts
@@ -14,7 +44,7 @@ dependencies {
 }
 ```
 
-The module is published as an Android AAR (`com.android.library`) with `compose-runtime` + `compose-runtime-saveable` dependencies. It does **not** depend on Material 3 or `compose.foundation` — you bring whatever UI library you prefer.
+The module depends only on `compose.runtime` + `compose.runtime-saveable` — it does **not** pull in Material 3 or `compose.foundation`. You bring whatever UI library fits each target (Material 3 for Android/Desktop; Compose Multiplatform Material for iOS).
 
 ## API
 

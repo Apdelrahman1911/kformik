@@ -63,8 +63,15 @@ signing {
     }
 }
 
-// Gradle 8.x requires explicit ordering between Sign tasks and consumers of their .asc outputs.
+// Gradle 8.x requires explicit ordering between Sign tasks and any other task that reads from
+// directories the Sign tasks decorate with .asc artifacts. This covers:
+//  - publish tasks (consume <artifact>.asc files via the publication)
+//  - Kotlin/Native test compile tasks (their input directory contains the .klib that gets a
+//    sibling .klib.asc written by the Sign task)
 tasks.withType<AbstractPublishToMaven>().configureEach {
+    mustRunAfter(tasks.withType<Sign>())
+}
+tasks.matching { it.name.startsWith("compileTestKotlin") }.configureEach {
     mustRunAfter(tasks.withType<Sign>())
 }
 

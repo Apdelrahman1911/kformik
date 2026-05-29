@@ -35,15 +35,20 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.apdelrahman1911:kformik:1.4.0")
+    implementation("io.github.apdelrahman1911:kformik:1.5.0")
 
     // Optional
-    implementation("io.github.apdelrahman1911:kformik-compose:1.4.0")  // Android Compose adapter
-    ksp("io.github.apdelrahman1911:kformik-ksp:1.4.0")                 // typed paths + updater (experimental)
+    implementation("io.github.apdelrahman1911:kformik-compose:1.5.0")  // Compose Multiplatform adapter
+
+    // KSP processor — needs BOTH compileOnly (for @FormValues import) and ksp (to run the processor)
+    compileOnly("io.github.apdelrahman1911:kformik-ksp:1.5.0")
+    ksp("io.github.apdelrahman1911:kformik-ksp:1.5.0")
 }
 ```
 
-Targets: JVM 17+, Android (`minSdk 21`), iOS (`iosX64`, `iosArm64`, `iosSimulatorArm64`).
+Targets: JVM 17+, Android (`minSdk 21` for core / `24` for the Compose adapter), iOS (`iosX64`, `iosArm64`, `iosSimulatorArm64`).
+
+The `kformik-compose` adapter is a Compose Multiplatform module — works in shared `commonMain` code on Android, Desktop JVM, and iOS. See the Compose section below.
 
 ## What's in it
 
@@ -149,9 +154,43 @@ form.setFieldError(LoginValuesPaths.password, "Too short")
 
 Nested `@FormValues data class`es nest the path scope (`UserValuesPaths.address.city`). Lists, maps, sealed types, and generics aren't generated yet; for those, fall back to string paths and either hand-roll the `ValuesUpdater` or stay with `Map<String, Any?>`. Full walkthrough in [`docs/KSP_TYPED_PATHS.md`](docs/KSP_TYPED_PATHS.md).
 
-## Compose (Android)
+### Generating typed paths on demand
+
+KSP runs automatically whenever the Kotlin compiler runs — e.g. `./gradlew build`, an Android Studio "Build → Make Project", or any save when **Build project automatically** is enabled in IntelliJ. The `Paths` / `Updater` files appear in `build/generated/ksp/.../kotlin/`, which the IDE already indexes as a source root.
+
+If you'd rather have a single named task that regenerates the `@FormValues` outputs without running a full project build, paste this snippet into your `build.gradle.kts`:
 
 ```kotlin
+tasks.register("generateKFormikTypedPaths") {
+    group = "kformik"
+    description = "Run KSP to generate @FormValues typed paths and ValuesUpdater objects (no full build)."
+
+    // tasks.matching is lazy and project-shape-agnostic — picks up whatever KSP tasks the active
+    // Kotlin / Android / KMP configuration registered: kspKotlin (JVM), kspDebugKotlin (Android),
+    // kspCommonMainKotlinMetadata + kspKotlinJvm/IosX64/… (KMP).
+    dependsOn(tasks.matching { it.name.startsWith("ksp") && it.name.contains("Kotlin") })
+}
+```
+
+The task shows up in IntelliJ / Android Studio's Gradle tool window under a **kformik** group. Run it from the IDE or `./gradlew generateKFormikTypedPaths` to refresh only the generated outputs, skipping the rest of the build.
+
+> A future release (v1.6.0+) will ship a small `kformik-gradle-plugin` that auto-registers this task — so the snippet above becomes a one-line `plugins { id("io.github.apdelrahman1911.kformik") version "..." }`. The snippet is the v1.5.0 path; both will work side by side once the plugin lands.
+
+## Compose
+
+`kformik-compose` is a **Compose Multiplatform** module. The same `rememberFormik(…)` API works in shared `commonMain` code on:
+
+| Target | Supported | Notes |
+|---|:---:|---|
+| Android (Jetpack Compose) | ✅ | uses AndroidX Compose runtime under the hood |
+| Desktop JVM (Compose Multiplatform) | ✅ | works with `compose-jb` desktop projects |
+| iOS (Compose Multiplatform) | ✅ | `iosX64`, `iosArm64`, `iosSimulatorArm64` |
+| Web / WASM | ⏸ | not exposed yet (no `wasmJs`/`js` target on this module) |
+
+Use it from any of those, including from `commonMain`:
+
+```kotlin
+// shared commonMain code:
 @Composable
 fun LoginScreen() {
     val form = rememberFormik(
@@ -173,7 +212,9 @@ fun LoginScreen() {
 }
 ```
 
-Working sample in [`sample-android-app/`](sample-android-app/). More patterns in [`docs/COMPOSE_USAGE.md`](docs/COMPOSE_USAGE.md).
+The form-state code above compiles unchanged on Android, Desktop, and iOS. The only platform-specific layer is the choice of `OutlinedTextField` / `Button` widgets (Material 3 on Android + Desktop; Compose Multiplatform Material on iOS).
+
+Working Android sample in [`sample-android-app/`](sample-android-app/). More patterns in [`docs/COMPOSE_USAGE.md`](docs/COMPOSE_USAGE.md).
 
 ## SwiftUI / iOS
 
@@ -209,7 +250,7 @@ More in [`docs/IOS_USAGE.md`](docs/IOS_USAGE.md).
 
 ```
 kformik/             core KMP library
-kformik-compose/     Compose adapter (Android)
+kformik-compose/     Compose Multiplatform adapter (Android / Desktop / iOS)
 kformik-ksp/         KSP processor for typed paths + ValuesUpdater (experimental)
 sample-android-app/  Compose sample
 examples/            10 runnable JVM examples
@@ -240,7 +281,7 @@ Maven Central release process: [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.
 
 ## What isn't done
 
-- The Compose adapter is Android-only. No Compose Multiplatform target.
+- The Compose adapter ships as a Compose Multiplatform module (Android / Desktop JVM / iOS targets). Web / WASM targets aren't built yet.
 - iOS device target compiles but isn't exercised in CI; the iOS simulator target is.
 - KSP `@FormValues` generation handles flat and nested `data class`es. Lists, maps, sealed types, and generics aren't covered yet.
 - No CI workflow shipped — releases run from a local machine.
