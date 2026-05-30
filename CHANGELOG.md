@@ -2,7 +2,7 @@
 
 All notable changes are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.6.0] — unreleased
+## [1.6.0] — 2026-05-30
 
 A correctness-and-robustness release. The headline is a hardened concurrency/state model: the
 controller now genuinely honours its documented "safe from multiple coroutines on multiple threads"
