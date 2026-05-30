@@ -153,10 +153,17 @@ struct LoginView: View {
 ## Limitations and notes
 
 - **Strong typing**: `Map<String, Any?>` is the only supported `Values` shape for the bridge. For typed `data class` values, build a `FormikController` directly and write a thin Swift wrapper.
-- **Threading**: the bridge creates a `MainScope()` by default, so state callbacks fire on the iOS main thread. Pass your own `CoroutineScope` to override.
-- **Async validation**: the `validate` parameter exposed via `companion.create` is synchronous (Swift can't easily express a `suspend` closure). For async checks, use `setFieldError` from inside `onSubmit` or write a Kotlin-side helper that returns `suspend`.
-- **Build environment**: the bridge has been compiled for `iosArm64`, `iosX64`, and `iosSimulatorArm64` in this repo. SwiftUI verification requires Xcode and an iOS simulator/device — not part of the JVM/Android CI loop.
+- **Threading**: `observe` delivers its callback on a `callbackDispatcher` (default `Dispatchers.Main`), so it is safe to update `@Published`/UIKit from inside it even if you pass a background work scope to `create`. The bridge's work scope defaults to `MainScope()`; pass your own `mainScope`/`callbackDispatcher` to override.
+- **`onSubmit` shape**: `create`'s `onSubmit` is a Kotlin `suspend` handler `(values, actions)`; from vanilla Kotlin/Native that bridges to a completion-handler closure (or an `async` closure under SKIE). For a plain non-suspending Swift closure `{ values in … }`, use `companion.createSimple(...)` instead.
+- **Async validation**: the `validate` parameter is synchronous (Swift can't easily express a `suspend` closure). For async checks, use `setFieldError` from inside `onSubmit` or write a Kotlin-side helper that returns `suspend`.
+- **Framework**: each iOS target declares a `Kformik` framework binary, so `./gradlew :kformik:linkReleaseFrameworkIos*` produces `Kformik.framework`. SwiftUI verification still requires Xcode and an iOS simulator/device — not part of the JVM/Android CI loop.
 
 ## Tests
 
-The bridge's behavior is exercised through the core controller tests, which run on `iosSimulatorArm64`. No iOS-specific test fixture has been added in this phase; a future round can add a `kotlin/native/test` suite that drives the bridge directly.
+The bridge has a dedicated iOS-target test suite at
+`kformik/src/iosTest/kotlin/io/kformik/ios/FormikIosBridgeTest.kt`, compiled and run on
+`iosX64` / `iosArm64` / `iosSimulatorArm64`. It drives the Swift-facing API directly (create,
+snapshot, observe/cancel, setters, submit, reset, validation, dirty/valid, `createSimple`). The
+tests inject an unconfined scope + `callbackDispatcher` so callbacks fire synchronously without a
+main runloop, so they verify the API contract but not real main-thread dispatch — that must be
+verified from a Swift/SwiftUI consumer in Xcode.

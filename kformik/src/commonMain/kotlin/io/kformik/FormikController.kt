@@ -760,9 +760,16 @@ class FormikController<V>(
 
     // ------------------------------------------------------------------------- expose flags
 
+    /** Read-only mirror of [FormikConfig.validateOnChange]. */
     val validateOnChange: Boolean get() = config.validateOnChange
+
+    /** Read-only mirror of [FormikConfig.validateOnBlur]. */
     val validateOnBlur: Boolean get() = config.validateOnBlur
+
+    /** Read-only mirror of [FormikConfig.validateOnMount]. */
     val validateOnMount: Boolean get() = config.validateOnMount
+
+    /** Read-only mirror of [FormikConfig.enableReinitialize]. */
     val enableReinitialize: Boolean get() = config.enableReinitialize
 }
 

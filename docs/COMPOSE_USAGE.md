@@ -44,7 +44,7 @@ dependencies {
 }
 ```
 
-The module depends only on `compose.runtime` + `compose.runtime-saveable` — it does **not** pull in Material 3 or `compose.foundation`. You bring whatever UI library fits each target (Material 3 for Android/Desktop; Compose Multiplatform Material for iOS).
+Beyond the core `api(:kformik)`, the module pulls in `compose.runtime`, `compose.runtime-saveable`, and `kotlinx-coroutines-core` (plus `kotlinx-coroutines-android` on Android for the main dispatcher) — it does **not** pull in Material 3 or `compose.foundation`. You bring whatever UI library fits each target (Material 3 for Android/Desktop; Compose Multiplatform Material for iOS).
 
 ## API
 
@@ -89,7 +89,17 @@ Returned `ComposeFormik<V>` exposes:
 | `resetForm()`              | `Unit` (fire-and-forget)          | Calls `controller.handleReset()`               |
 | `launch { … }`             | `Unit`                            | Run a suspend block with `FormikActions`       |
 
-The remembered controller is disposed when the composable leaves composition (`DisposableEffect`).
+The remembered controller is bound to `rememberCoroutineScope()`; when the composable leaves
+composition Compose cancels that scope, tearing down in-flight work and causing subsequent
+mutations to be dropped. `controller.close()` is a no-op for a remembered controller because the
+scope is caller-owned.
+
+Recomposition: reading `form.state.value` is whole-form (any change recomposes every reader). For
+field-grained recomposition, use `form.fieldState("name")`, which is backed by a per-field
+deduplicated flow and only recomposes when that field's own value/error/touched changes. The
+core data types (`FormikState`, `FormikErrors`, `FormikTouched`, `FieldBinding`) live in the
+non-Compose `:kformik` module; to let the Compose compiler treat them as stable in your app, add
+them to your module's `stabilityConfigurationFile` (e.g. a line `io.kformik.*`).
 
 ## Recommended pattern
 
@@ -152,7 +162,7 @@ fun LoginScreen() {
 
 ## Sample
 
-See `kformik-compose/src/main/kotlin/io/kformik/compose/sample/LoginScreenSample.kt` — compile-checked at every build.
+See `kformik-compose/src/commonMain/kotlin/io/kformik/compose/sample/LoginScreenSample.kt` — compile-checked at every build.
 
 ## Why no `:examples:run` task for Compose
 
