@@ -116,17 +116,18 @@ Both flows work in parallel — they're not exclusive.
 
 > **Coming in a future release (v1.6.0+):** a small `kformik-gradle-plugin` artifact that auto-registers `generateKFormikTypedPaths` for you. Applying the plugin (`plugins { id("io.github.apdelrahman1911.kformik") version "..." }`) will replace the snippet above with a one-line `plugins { }` entry. The snippet remains the supported v1.5.0 path; both will coexist after the plugin lands.
 
-## What's supported in v1.3-experimental
+## What's supported (v1.5.0, experimental)
 
 - ✅ Flat data classes (primitives, `String`, anything that's not `@FormValues`).
-- ✅ Nested `@FormValues` types — paths join with `.`. Nested object scope exposes a `$path` constant that names the array path itself.
-- ✅ Cross-file references within the same KSP-processed compilation.
+- ✅ Nested `@FormValues` types — paths join with `.`. The nested object scope exposes a backtick-quoted `` `$path` `` constant that names the array path itself.
+- ✅ Cross-file **and cross-package** references within the same KSP-processed compilation (nested updater references are package-qualified).
+- ✅ A generated `<Name>Updater : io.kformik.ValuesUpdater<Name>` (typed get/set/leafPaths), with `kotlin-compile-testing` integration coverage.
+- ✅ Properties whose type lives in another package (`java.math.BigDecimal`, etc.) and keyword-named properties (`` `in` ``) — cast by fully-qualified name / backtick-escaped.
 
 ## What's NOT supported (deferred)
 
-- ❌ `List<...>`-typed properties. The list itself can be addressed (`object friends { const val $path = "friends" }`), but per-index access still uses string concatenation (`"${LoginValuesPaths.friends.$path}[0]"`). Index-typed accessors are a future enhancement.
-- ❌ `Map<...>` properties.
-- ❌ Sealed / abstract / generic / inline types.
+- ❌ Per-index typed `List<...>` accessors. `List`/`Map` properties are handled by the updater as a **full-value replacement** (`setAt("tags", newList)`); per-index access still uses string concatenation (`"${LoginValuesPaths.friends.`$path`}[0]"`). Index-typed accessors are a future enhancement.
+- ❌ Non-data, sealed, abstract, enum, interface, or generic classes — these are **rejected with a clear `KSPLogger` error** at the `@FormValues` declaration rather than miscompiled.
 - ❌ Cross-module annotation discovery — annotated types and their nested children must live in the same KSP-processed compilation.
 - ❌ KMP source-set awareness. The processor runs against any classpath KSP sees; for `commonMain` types, apply KSP to that source set.
 
@@ -137,10 +138,10 @@ The emitter caps nested object recursion at depth 8 (a safety bound against path
 ## Tests
 
 - `kformik-ksp/src/test/kotlin/io/kformik/ksp/FormValuesProcessorTest.kt` — pure-Kotlin tests for the path-flattening rule and provider-class wiring (`META-INF/services` resolves to a real `SymbolProcessorProvider`).
-- Full KSP integration tests (`kotlin-compile-testing`) are out of scope for this phase. The proof is that the processor compiles, ships, and the META-INF wiring resolves.
+- `FormValuesProcessorCompileTest` / `FormValuesUpdaterGenerationTest` — `kotlin-compile-testing` (`kctfork`) integration tests that compile `@FormValues` sources and assert the generated `*Paths` / `*Updater` content and runtime behavior.
+- `FormValuesProcessorHardeningTest` — edge cases: computed/inherited props, cross-package types, collections, cross-package nested, keyword names, non-data/generic rejection, null-to-non-null.
 
 ## Roadmap
 
-- v1.4 — add `kotlin-compile-testing`-driven integration tests that compile a `@FormValues` data class and assert the generated content byte-for-byte.
-- v1.4 — emit a `ValuesUpdater` alongside the paths object (so `kformik-ksp` becomes a full typed-form helper, not just constants).
-- v1.5 — `List<...>` index-aware accessors (e.g. `LoginValuesPaths.friends[0]` resolving statically when the index is a compile-time constant).
+- `List<...>` index-aware accessors (e.g. `LoginValuesPaths.friends[0]` resolving statically when the index is a compile-time constant).
+- A `kformik-gradle-plugin` that auto-registers the codegen task (see the note above).

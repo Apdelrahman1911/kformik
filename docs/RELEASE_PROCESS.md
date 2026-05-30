@@ -4,11 +4,11 @@ End-to-end checklist for cutting a Kformik release. This repo does **not** publi
 
 ## Snapshot
 
-- **Current version:** `1.4.0-SNAPSHOT` (single source of truth: `gradle.properties` → `kformikVersion=…`)
+- **Current version:** `1.5.0` (single source of truth: `gradle.properties` → `kformikVersion=…`)
 - **Group:** `io.github.apdelrahman1911` (verified via GitHub identity on Maven Central; single source of truth: `gradle.properties` → `kformikGroup=…`)
-- **Modules published:** `:kformik` (KMP — JVM, Android, iosX64, iosArm64, iosSimulatorArm64), `:kformik-compose` (Android AAR), `:kformik-ksp` (JVM JAR)
+- **Modules published:** `:kformik` (KMP — JVM, Android, iosX64, iosArm64, iosSimulatorArm64), `:kformik-compose` (KMP umbrella — Android, Desktop JVM, iosX64, iosArm64, iosSimulatorArm64; Android consumers auto-resolve the `android` variant via Gradle module metadata), `:kformik-ksp` (JVM JAR)
 - **Local-Maven path:** `~/.m2/repository/io/github/apdelrahman1911/<artifact>/<version>/`
-- **External target:** Sonatype OSSRH → Maven Central (`s01.oss.sonatype.org`)
+- **External target:** Sonatype **Central Publisher Portal** via the OSSRH-Staging-API bridge (`ossrh-staging-api.central.sonatype.com`) → Maven Central. The exact endpoints are configured in the root `build.gradle.kts` (`nexusPublishing { … }`), which is the source of truth.
 - **Docs jars:** Dokka HTML, wired into the `-javadoc` classifier of every publication
 
 ## Prerequisites
@@ -61,15 +61,17 @@ When `SIGNING_KEY` + `SIGNING_PASSWORD` are present, `./gradlew publishToMavenLo
 
 ## Sonatype / OSSRH setup
 
-One-time (a real maintainer must do this, not the build):
+One-time (a real maintainer must do this, not the build). The legacy `issues.sonatype.org` JIRA
+"New Project" flow and the `s01.oss.sonatype.org` host are decommissioned — use the Central
+Publisher Portal:
 
-1. Sign up at <https://issues.sonatype.org/>.
-2. File a "New Project" ticket requesting the `io.github.apdelrahman1911` group ID (skip this if the namespace is already verified via GitHub identity on the Central Publisher Portal). Provide:
-   - GitHub URL of the real repo (replace the placeholder `https://github.com/Apdelrahman1911/kformik`).
-   - GPG key fingerprint from the step above.
-3. Wait for Sonatype approval (~1 business day).
-4. Create a user-token at <https://s01.oss.sonatype.org/#profile;User%20Token>. Set `SONATYPE_USERNAME` and `SONATYPE_PASSWORD` to the **token** (not your login).
-5. Note the staging profile ID — visible at <https://s01.oss.sonatype.org/#stagingProfiles>. Pass via `-PsonatypeStagingProfileId=<id>` or add to `~/.gradle/gradle.properties`.
+1. Verify the `io.github.apdelrahman1911` namespace at <https://central.sonatype.com> (Account →
+   Namespaces). For an `io.github.<github-username>` group this is auto-verifiable via GitHub identity.
+2. Generate a **Portal user token** at <https://central.sonatype.com/usertoken> (Account → Generate
+   User Token). Set `SONATYPE_USERNAME` / `SONATYPE_PASSWORD` to the token username/password.
+   Note: an old OSSRH/`s01` token returns HTTP 401 against the configured bridge endpoint.
+3. `sonatypeStagingProfileId` is optional under the bridge — it can be left unset. The
+   gradle-nexus publish-plugin (v2) handles the bridge upload/close; there is no manual upload step.
 
 ## Local verification (run before tagging)
 
@@ -93,7 +95,7 @@ ls ~/.m2/repository/io/github/apdelrahman1911/*/$(grep '^kformikVersion=' gradle
 # Expected: each module has -<version>.jar, -<version>-sources.jar, -<version>-javadoc.jar, .pom
 
 # Verify the Dokka HTML is actually inside the javadoc jar:
-jar tf ~/.m2/repository/io/github/apdelrahman1911/kformik-jvm/1.4.0-SNAPSHOT/kformik-jvm-1.4.0-SNAPSHOT-javadoc.jar | head
+V=$(grep '^kformikVersion=' gradle.properties | cut -d= -f2); jar tf ~/.m2/repository/io/github/apdelrahman1911/kformik-jvm/$V/kformik-jvm-$V-javadoc.jar | head
 # Expected: index.html + Dokka HTML site assets
 ```
 
@@ -109,7 +111,7 @@ export SONATYPE_PASSWORD="<token-password>"
 
 ./gradlew publishToSonatype
 # Snapshots are immediately consumable via:
-#   repositories { maven("https://s01.oss.sonatype.org/content/repositories/snapshots/") }
+#   repositories { maven("https://central.sonatype.com/repository/maven-snapshots/") }
 ```
 
 ## External publish (RELEASE)
@@ -159,7 +161,7 @@ The build uses [`io.github.gradle-nexus.publish-plugin`](https://github.com/grad
 - `:closeAndReleaseSonatypeStagingRepository` — the two above combined
 - `:dropSonatypeStagingRepository` — abort a failed staging repo
 
-For initial debugging, run `closeSonatypeStagingRepository` separately; the web UI at <https://s01.oss.sonatype.org/#stagingRepositories> shows validation errors more clearly than the CLI output.
+For initial debugging, run `closeSonatypeStagingRepository` separately; the Portal deployments view at <https://central.sonatype.com/publishing> shows validation errors more clearly than the CLI output.
 
 ## Rollback
 
@@ -208,7 +210,7 @@ Only `:kformik`, `:kformik-compose`, `:kformik-ksp` are published.
 
 ## Known limitations before first real release
 
-1. **No CI workflow** — this repo doesn't contain a `.github/workflows/release.yml`. A release workflow needs to invoke `publishToSonatype closeAndReleaseSonatypeStagingRepository` from a runner with the secrets configured.
+1. **No release workflow** — `.github/workflows/ci.yml` runs tests/assemble/`apiCheck`/`publishToMavenLocal` on push + PR, but there is no `.github/workflows/release.yml`. A release workflow would need to invoke `publishToSonatype closeAndReleaseSonatypeStagingRepository` from a runner with the `SIGNING_*`/`SONATYPE_*` secrets configured.
 2. **Compose UI Robolectric tests are gated off by default** — they live in `:sample-android-app/src/robolectricTest/` and require `-PwithRobolectric=true` plus network access for the 158 MB native-runtime JAR.
 3. **iOS device target (`iosArm64`)** compiles but its tests aren't run in CI — no physical device wired up. The simulator (`iosSimulatorArm64`) is.
 4. **KSP support is experimental** — flat + nested `@FormValues` data classes work; `List<...>` / `Map<...>` / sealed / generic types are not yet covered. See `docs/KSP_TYPED_PATHS.md`.
@@ -220,7 +222,7 @@ Only `:kformik`, `:kformik-compose`, `:kformik-ksp` are published.
 ./gradlew publishToMavenLocal
 
 # Verify Dokka docs jars include real HTML
-jar tf ~/.m2/repository/io/github/apdelrahman1911/kformik-jvm/1.4.0-SNAPSHOT/kformik-jvm-1.4.0-SNAPSHOT-javadoc.jar | head
+V=$(grep '^kformikVersion=' gradle.properties | cut -d= -f2); jar tf ~/.m2/repository/io/github/apdelrahman1911/kformik-jvm/$V/kformik-jvm-$V-javadoc.jar | head
 
 # Generate just the docs (per-module)
 ./gradlew :kformik:dokkaHtml :kformik-compose:dokkaHtml :kformik-ksp:dokkaHtml

@@ -44,6 +44,15 @@ package io.kformik
  *    cross-field constraints.
  *  - **Suspending.** Validators are `suspend`, so an API check ("is this email already used?")
  *    can be expressed inline.
+ *
+ * Limitations to be aware of:
+ *  - **Map/List path resolution only.** Schema path lookup uses [MapValuesUpdater]/[getIn], which
+ *    understand `Map`/`List` trees. A schema attached to a typed `data class` form (with a custom
+ *    [ValuesUpdater]) will read `null` for nested/typed fields. Use a `Map<String, Any?>` form, or a
+ *    top-level [FormikConfig.validate] lambda, when validating typed values.
+ *  - **Multi-error mode is direct-call only.** [FormikController] always uses the single-error
+ *    [validate]/[validateField] path; the `failFast = false` flag and [validateAll]/[validateAllField]
+ *    only take effect when you call them on the schema directly.
  */
 /**
  * Field metadata returned by [FormSchema.fieldInfo] and friends. Lists the rule names attached
@@ -147,6 +156,31 @@ class FormSchema<V> internal constructor(
             if (msg != null) return msg
         }
         return null
+    }
+
+    /**
+     * Like [validateField], but also consults cross-field rules ([cross]) that produce an error
+     * keyed at [path]. Used by [FormikController.validateField] so a field whose only error comes
+     * from a cross-field constraint (e.g. a confirm-password mismatch) is not erroneously cleared
+     * when the field itself has no per-field rule. A cross-field error **overrides** the per-field
+     * first-failing message on the same path, matching the cross-merges-last precedence of the full
+     * [validate] (so `validateField` and `validateForm` agree on the committed error for a path).
+     */
+    suspend fun validateFieldIncludingCross(values: V, path: String): String? {
+        var msg: String? = perField[path]?.let { rules ->
+            val value = readValue(values, path)
+            var found: String? = null
+            for (rule in rules) {
+                val m = rule.check(value, values)
+                if (m != null) { found = m; break }
+            }
+            found
+        }
+        for (rule in crossField) {
+            val errs = rule(values)
+            errs.byPath[path]?.let { msg = it } // cross overrides per-field, mirroring validate()'s putAll-last
+        }
+        return msg
     }
 
     /**
@@ -308,19 +342,27 @@ class FieldRulesBuilder<V>(private val path: String) {
         }
     }
 
-    /** Matches a (sufficient) email pattern: non-empty, contains a single `@`, has a dot in the domain. */
+    /**
+     * Matches a (sufficient) email pattern: contains a single `@`, has a dot in the domain.
+     * A blank/absent value passes (combine with [required] to forbid it), so an optional email
+     * field left empty is not flagged — matching Yup's skip-on-empty and [required]'s isBlank rule.
+     */
     fun email(message: String = "Invalid email") {
         rules += FieldRule(name = "email") { value, _ ->
             val s = value as? String ?: return@FieldRule null
-            if (s.isEmpty()) return@FieldRule null
+            if (s.isBlank()) return@FieldRule null
             if (EMAIL_REGEX.matches(s)) null else message
         }
     }
 
-    /** Custom regex match. The [pattern] must be a valid [Regex]. */
+    /**
+     * Custom regex match. The [pattern] must be a valid [Regex]. A blank/absent value passes
+     * (combine with [required] to forbid it), consistent with [email].
+     */
     fun pattern(pattern: Regex, message: String = "Does not match pattern") {
         rules += FieldRule(name = "pattern") { value, _ ->
             val s = value as? String ?: return@FieldRule null
+            if (s.isBlank()) return@FieldRule null
             if (pattern.matches(s)) null else message
         }
     }

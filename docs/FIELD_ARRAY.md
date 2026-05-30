@@ -47,13 +47,20 @@ Example:
 
 ```kotlin
 form.setFieldError("friends[2]", "bad")
-form.array("friends").remove(0)
+// Pass shouldValidate = false so the imperatively-set error isn't immediately wiped by re-validation.
+form.array("friends").remove(0, shouldValidate = false)
 // errors["friends[2]"] is now null; errors["friends[1]"] is "bad"
 ```
 
 ## Validation behavior
 
 Every mutation respects `FormikConfig.validateOnChange` (default `true`). Pass `shouldValidate = false` to suppress validation for a single mutation, or `shouldValidate = true` to force it on a controller configured with `validateOnChange = false`.
+
+Index realignment of `touched`/`errors` happens **before** the optional re-validation. Because
+re-validation (the default) replaces the entire error map with the validators' output, an
+imperatively-set per-row error like `setFieldError("friends[2]", …)` is cleared on the next
+validating mutation unless a registered validator regenerates it. Pass `shouldValidate = false` to
+preserve such errors; realignment is most meaningful for `touched` and for validator-produced errors.
 
 ## Nested paths
 

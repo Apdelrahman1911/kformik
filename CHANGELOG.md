@@ -2,6 +2,57 @@
 
 All notable changes are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — unreleased
+
+A correctness-and-robustness release. The headline is a hardened concurrency/state model: the
+controller now genuinely honours its documented "safe from multiple coroutines on multiple threads"
+guarantee and its async-validation semantics. Additive API only — existing source compiles
+unchanged — but a few **behaviour corrections** are called out under _Changed_ below.
+
+### Added
+
+- `FormikController.fieldOfOrNull<T>(name)` — null-safe typed `FieldBinding<T?>` for optional / not-yet-populated fields.
+- `FormikController.fieldFlow(name)` — a per-field, deduplicated `StateFlow<FieldBinding<Any?>>` that only emits when *that field's* value/error/touched change. `ComposeFormik.fieldState(name)` is now backed by it (genuinely field-grained recomposition), plus `ComposeFormik.valueOf<T>(name)`.
+- `FormikConfig.onError` — an error sink for the fire-and-forget `handleSubmit()` / `handleReset()` paths (previously failures were silently swallowed); also exposed as `rememberFormik(onError = …)`.
+- iOS bridge: `FormikIosBridge.createSimple(…)` (non-suspending Swift-friendly `onSubmit`), `StateSnapshot.isDirty()` / `isValid()`, a configurable `observe(callbackDispatcher = …)` (defaults to `Dispatchers.Main`), `@ObjCName` refinements, and a real `Kformik` framework binary on each iOS target (the documented `linkReleaseFrameworkIos*` tasks now exist).
+- `FormSchema.validateFieldIncludingCross(values, path)` — focused validation that also consults cross-field rules.
+- Public-ABI guardrail: the Kotlin Binary Compatibility Validator with committed `api/*.api` baselines and an `apiCheck` step in CI.
+- Extensive regression coverage, including JVM real-thread concurrency stress tests.
+
+### Fixed
+
+- **Concurrency / state model.** Stale/slow async validations can no longer overwrite a fresher result, and a validation launched before a `resetForm`/`reinitialize` no longer repopulates cleared errors (monotonic validation-generation guard). `isValidating` is published from an in-flight-run counter (overlapping runs no longer clear it early) and is restored even on cancellation. All `_state` writes are compare-and-set, so the lock-free setters no longer clobber a value/touched mutation on a disjoint slice. `submit()` is single-flight and validates the exact snapshot it submits. The field registry is thread-safe (no `ConcurrentModificationException` / Native crash).
+- **`validateField`.** Preserves cross-field errors instead of clearing them, uses the same cross-overrides-per-field precedence as `validateForm`, and no longer overwrites a fresher full-validation result from a stale snapshot.
+- **Field arrays.** `pop()` returns the correct element even when indexed `touched`/`errors` entries exist; index re-alignment is bounded to the live array and preserves orphan keys; negative indices are guarded; operating on a present-but-non-list path now throws instead of silently overwriting it.
+- **Path / value updater.** Negative and excessively large list indices are bounded no-ops (no `IndexOutOfBounds`, no OOM); clearing a nested leaf prunes the now-empty parent so `dirty` re-baselines; `setAt` reuses the parsed path and drops a redundant copy per level.
+- **`fieldOf<T>`.** No longer throws a raw `ClassCastException`/NPE on an absent or type-mismatched field — it gives an actionable message (or use `fieldOfOrNull`).
+- **KSP.** Generated `<Name>Updater` now compiles for properties whose type is in another package, collection-typed properties, keyword-named properties, computed/inherited properties, and **nullable nested `@FormValues`**; setting a non-null field to `null` yields a path-named error; unsupported targets (non-data / sealed / abstract / generic) are reported via the KSP logger instead of emitting uncompilable code.
+- **Compose.** Field-grained recomposition (above); `onSubmit`/`validate`/`onReset` callbacks no longer go stale across recompositions (`rememberUpdatedState`); `enableReinitialize` now re-syncs the baseline when `initialValues` changes.
+- **iOS.** `observe` callbacks are delivered on the main dispatcher regardless of the work scope; setter call order is preserved.
+
+### Changed
+
+> Behaviour corrections that could affect existing forms — review before upgrading:
+
+- `email()` / `pattern()` schema rules now **pass on blank/absent input** (combine with `required()` to forbid an empty value); an optional empty field is no longer flagged.
+- `submit()` is now **single-flight**: a concurrent or double submit is a no-op (no second `onSubmit`, `submitCount` not double-incremented).
+- A blank/empty error string is no longer surfaced via `displayError` (it still counts as invalid for `isValid`).
+- A non-`Map` values type constructed **without** a `valuesUpdater` now **fails fast at construction** with an actionable message (previously it threw on first field access).
+- `LoginScreenSample` in `:kformik-compose` is now `internal` (it was inadvertently part of the published API).
+- Dropped the unused `compose.runtime-saveable` dependency from `:kformik-compose`.
+- The build now fails fast if `kformikGroup` / `kformikVersion` are missing (no stale fallback coordinates).
+
+### Docs
+
+- README schema `custom` examples corrected to the real `(value, allValues) -> String?` contract; suspend calls shown in a coroutine context; CI-vs-release framing fixed.
+- `docs/RELEASE_PROCESS.md` migrated from the decommissioned `s01.oss.sonatype.org` flow to the Sonatype Central Publisher Portal; `COMPOSE_USAGE.md`, `IOS_USAGE.md`, `KSP_TYPED_PATHS.md`, and `FIELD_ARRAY.md` brought in line with the code; KDoc added to the `FormikActions` members and the controller's config-mirror flags.
+
+### Coordinates (once released)
+
+- `io.github.apdelrahman1911:kformik:1.6.0`
+- `io.github.apdelrahman1911:kformik-compose:1.6.0`
+- `io.github.apdelrahman1911:kformik-ksp:1.6.0`
+
 ## [1.5.0] — 2026-05-30
 
 ### Added

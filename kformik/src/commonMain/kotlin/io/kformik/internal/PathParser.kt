@@ -12,6 +12,10 @@ package io.kformik.internal
  * Used internally for nested values stored in a [Map] or any structure that [ValuesUpdater]
  * traverses. Field error and touched maps are *flat* — they index by the original string path —
  * so this parser is only invoked when we need to actually walk a nested values tree.
+ *
+ * Empty segments are collapsed, not rejected: `"a..b"` → `["a","b"]`, `"a."` → `["a"]`,
+ * `"."`/`""` → `[]`. A path that yields no segments (e.g. `"."`) therefore resolves to nothing;
+ * `MapValuesUpdater.setAt` rejects it with a clear "does not resolve to any field segment" error.
  */
 internal object PathParser {
 

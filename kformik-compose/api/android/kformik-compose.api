@@ -1,0 +1,30 @@
+public final class io/kformik/compose/ComposeFormik {
+	public static final field $stable I
+	public final fun displayError (Ljava/lang/String;)Ljava/lang/String;
+	public final fun error (Ljava/lang/String;)Ljava/lang/String;
+	public final fun fieldState (Ljava/lang/String;Landroidx/compose/runtime/Composer;I)Landroidx/compose/runtime/State;
+	public final fun getController ()Lio/kformik/FormikController;
+	public final fun getDirty (Landroidx/compose/runtime/Composer;I)Landroidx/compose/runtime/State;
+	public final fun getState (Landroidx/compose/runtime/Composer;I)Landroidx/compose/runtime/State;
+	public final fun isTouched (Ljava/lang/String;)Z
+	public final fun isValid (Landroidx/compose/runtime/Composer;I)Landroidx/compose/runtime/State;
+	public final fun launch (Lkotlin/jvm/functions/Function2;)V
+	public final fun resetForm ()V
+	public final fun setErrors (Lio/kformik/FormikErrors;)V
+	public final fun setFieldError (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun setFieldTouched (Ljava/lang/String;ZLjava/lang/Boolean;)V
+	public static synthetic fun setFieldTouched$default (Lio/kformik/compose/ComposeFormik;Ljava/lang/String;ZLjava/lang/Boolean;ILjava/lang/Object;)V
+	public final fun setFieldValue (Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Boolean;)V
+	public final fun setFieldValue (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Ljava/lang/Boolean;)V
+	public static synthetic fun setFieldValue$default (Lio/kformik/compose/ComposeFormik;Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Boolean;ILjava/lang/Object;)V
+	public static synthetic fun setFieldValue$default (Lio/kformik/compose/ComposeFormik;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Ljava/lang/Boolean;ILjava/lang/Object;)V
+	public final fun setStatus (Ljava/lang/Object;)V
+	public final fun setSubmitting (Z)V
+	public final fun submit ()V
+	public final fun value (Ljava/lang/String;)Ljava/lang/Object;
+}
+
+public final class io/kformik/compose/RememberFormikKt {
+	public static final fun rememberFormik (Ljava/lang/Object;Lkotlin/jvm/functions/Function2;Lio/kformik/SchemaValidator;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZZZZLio/kformik/ValuesUpdater;Lkotlin/jvm/functions/Function1;Ljava/lang/Object;Landroidx/compose/runtime/Composer;III)Lio/kformik/compose/ComposeFormik;
+}
+

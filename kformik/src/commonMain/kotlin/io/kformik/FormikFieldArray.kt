@@ -1,9 +1,5 @@
 package io.kformik
 
-import io.kformik.internal.PathParser
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-
 /**
  * Imperative array-field helpers. Mirrors Formik's `<FieldArray>` mutation helpers:
  *
@@ -28,8 +24,13 @@ import kotlinx.coroutines.sync.withLock
  * | swap      | yes             | yes            | swaps both                           |
  * | move      | yes             | yes            | moves both                           |
  *
- * Where alignment is required and the touched/errors entry at the array path doesn't exist or
- * isn't a list, no alignment is performed for that side.
+ * `touched`/`errors` are stored flat by string path, so "aligning" them means re-indexing keys of
+ * the form `path[idx]` / `path[idx].suffix` so they keep pointing at the same logical row after the
+ * structural change (e.g. `unshift` shifts `friends[0]` → `friends[1]`). A key at exactly `path`
+ * (a message about the whole list) is left untouched, as are index keys beyond the live array
+ * (orphans). When validation runs after the mutation (the default), the validators' freshly-computed
+ * errors replace the realigned ones — realignment is therefore most meaningful for `touched` and for
+ * imperatively-set errors preserved with `shouldValidate = false`.
  *
  * Each mutation respects [FormikConfig.validateOnChange] by default and runs validation if
  * the controller is configured to validate on change. A `shouldValidate` override is available
@@ -101,6 +102,9 @@ class FieldArrayController<V> internal constructor(
             },
             alterTouched = true,
             alterErrors = true,
+            // Use a dedicated, side-effect-free align function: reusing `fn` here would re-run the
+            // value-capturing lambda on the touched/errors bucket lists and clobber `popped`.
+            alignFn = { list -> if (list.isEmpty()) list else list.dropLast(1) },
             shouldValidate = shouldValidate,
         )
         return popped
@@ -220,34 +224,36 @@ class FieldArrayController<V> internal constructor(
         shouldValidate: Boolean?,
     ) {
         val willValidate = shouldValidate ?: controller.validateOnChange
-        val newValues: V = controller.applyAtomic { state ->
-            val currentList = (controller.valueAt(path) as? List<Any?>) ?: emptyList()
+        controller.applyArrayMutation(validate = willValidate) { state ->
+            // Read the current list from the locked snapshot (`state`), not the live controller, so
+            // the transform is a pure function of `state` and cannot tear against a concurrent write.
+            // Distinguish "absent" (null → treat as empty, create the array) from "present but not a
+            // list" (a scalar/object): the latter would otherwise be silently overwritten and the
+            // existing value lost.
+            val raw = controller.updaterValue.getAt(state.values, path)
+            val currentList: List<Any?> = when (raw) {
+                null -> emptyList()
+                is List<*> -> raw
+                else -> throw IllegalStateException(
+                    "FieldArray path '$path' resolves to a ${raw::class.simpleName}, not a List; " +
+                        "refusing to overwrite it. Check the path or the field's type."
+                )
+            }
             val newList = fn(currentList)
 
             val newValuesObj = controller.updaterValue.setAt(state.values, path, newList)
 
+            // touched/errors are stored flat by path; realign index-keyed entries (e.g. "friends[0]")
+            // so they keep pointing at the same logical row after the structural change.
             val newTouched: FormikTouched = if (alterTouched) {
-                val touchedListPath = path
-                val current = state.touched.byPath
-                // Touched array alignment is represented as a list stored under the array's own path;
-                // Kformik stores touched flat by path, so we only need to ensure parallel index keys exist.
-                // The simplest correct behavior: nothing to align in the flat map. Index-keyed touched
-                // entries (e.g. "friends[0]") are written by setFieldTouched and are NOT re-indexed by
-                // FieldArray operations — matching Formik's behavior, which only aligns the *nested*
-                // touched array, not separate flat paths.
-                val realigned = realignIndexedKeys(current, touchedListPath, currentList.size, fn, alignFn)
-                FormikTouched(realigned)
+                FormikTouched(realignIndexedKeys(state.touched.byPath, path, currentList.size, alignFn))
             } else state.touched
 
             val newErrors: FormikErrors = if (alterErrors) {
-                val realigned = realignIndexedKeys(state.errors.byPath, path, currentList.size, fn, alignFn)
-                FormikErrors(realigned)
+                FormikErrors(realignIndexedKeys(state.errors.byPath, path, currentList.size, alignFn))
             } else state.errors
 
             state.copy(values = newValuesObj, touched = newTouched, errors = newErrors)
-        }
-        if (willValidate) {
-            controller.runValidationsFromArray(newValues)
         }
     }
 
@@ -257,19 +263,23 @@ class FieldArrayController<V> internal constructor(
      * exactly `path` (no index) are untouched.
      *
      * Algorithm: extract index-keyed entries, place them into a parallel `List<Map<String,V>?>`
-     * (one bucket per old index, each bucket holds the suffix→value subset), run `alignFn` on that
-     * list, then re-emit the keys with new indices.
+     * sized to the live array (`[0, currentSize)`), run `alignFn` on that list, then re-emit the
+     * keys with new indices. Index keys that are negative or beyond the live array
+     * (`idx >= currentSize`) are not backed by a real element, so they are preserved verbatim
+     * instead of being folded into the alignment (this avoids both a huge allocation from a stray
+     * large index and silently dropping/relocating orphan keys).
      */
     @Suppress("UNCHECKED_CAST")
     private fun <T> realignIndexedKeys(
         flat: Map<String, T>,
         arrayPath: String,
         currentSize: Int,
-        fn: (List<Any?>) -> List<Any?>,
         alignFn: (List<Any?>) -> List<Any?>,
     ): Map<String, T> {
         val prefix = "$arrayPath["
-        // Bucket per old index; each bucket is a map of suffix → value
+        val liveSize = currentSize.coerceAtLeast(0)
+        // Bucket per old index (only indices that map to a live element); each bucket is a map of
+        // suffix → value. Orphan/negative-index keys pass through untouched.
         val buckets: MutableMap<Int, MutableMap<String, T>> = HashMap()
         val untouched: MutableMap<String, T> = HashMap()
         for ((k, v) in flat) {
@@ -280,7 +290,7 @@ class FieldArrayController<V> internal constructor(
                     val idxStr = rest.substring(0, close)
                     val idx = idxStr.toIntOrNull()
                     val suffix = rest.substring(close + 1) // may be "", ".name", "[2].nested", etc.
-                    if (idx != null) {
+                    if (idx != null && idx in 0 until liveSize) {
                         buckets.getOrPut(idx) { HashMap() }[suffix] = v
                         continue
                     }
@@ -290,8 +300,7 @@ class FieldArrayController<V> internal constructor(
         }
         if (buckets.isEmpty()) return flat
 
-        val maxIndex = buckets.keys.max()
-        val bucketList: List<MutableMap<String, T>?> = List(maxOf(currentSize, maxIndex + 1)) { i -> buckets[i] }
+        val bucketList: List<MutableMap<String, T>?> = List(liveSize) { i -> buckets[i] }
 
         @Suppress("UNCHECKED_CAST")
         val aligned = alignFn(bucketList as List<Any?>) as List<Any?>

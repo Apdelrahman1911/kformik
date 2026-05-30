@@ -69,7 +69,10 @@ class FormValuesUpdaterGenerationTest {
         // Generated source must declare the updater object
         assertTrue("updater object missing", gen.contains("object LoginValuesUpdater : io.kformik.ValuesUpdater<LoginValues>"))
         assertTrue("getAt body missing", gen.contains("path == \"email\" -> values.email"))
-        assertTrue("setAt body missing", gen.contains("path == \"email\" -> values.copy(email = value as String"))
+        // setAt now: copy(email = (value ?: error(...)) as kotlin.String) — FQN cast + non-null guard.
+        assertTrue("setAt body missing", gen.contains("path == \"email\" -> values.copy(email ="))
+        assertTrue("FQN cast missing", gen.contains("as kotlin.String"))
+        assertTrue("non-null guard missing", gen.contains("cannot be set to null"))
         assertTrue("leafPaths body missing", gen.contains("\"email\""))
 
         // Now load + invoke the compiled object
@@ -117,11 +120,11 @@ class FormValuesUpdaterGenerationTest {
         assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode)
 
         val gen = comp.generatedFile("app", "UserValuesUpdater.kt").readText()
-        // Generated nested delegation
-        assertTrue(gen.contains("path.startsWith(\"address.\") -> AddressValuesUpdater.getAt"))
-        assertTrue(gen.contains("path.startsWith(\"address.\") -> values.copy(address = AddressValuesUpdater.setAt"))
+        // Generated nested delegation — nested updater references are package-qualified (here "app").
+        assertTrue(gen.contains("path.startsWith(\"address.\") -> app.AddressValuesUpdater.getAt"))
+        assertTrue(gen.contains("path.startsWith(\"address.\") -> values.copy(address = app.AddressValuesUpdater.setAt"))
         // Generated leafPaths flattens
-        assertTrue(gen.contains("AddressValuesUpdater.leafPaths"))
+        assertTrue(gen.contains("app.AddressValuesUpdater.leafPaths"))
 
         val cl = result.classLoader
         val updaterCls = cl.loadClass("app.UserValuesUpdater")

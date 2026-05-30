@@ -21,9 +21,13 @@ val form = FormikController(
     )
 )
 
-form.setFieldValue("email", "user@example.com")
-form.setFieldTouched("email", true)
-form.submit()
+// setFieldValue / setFieldTouched / submit are suspend — call them from a coroutine
+// (or use the fire-and-forget form.handleSubmit() outside one):
+scope.launch {
+    form.setFieldValue("email", "user@example.com")
+    form.setFieldTouched("email", true)
+    form.submit()
+}
 ```
 
 ## Install
@@ -113,7 +117,9 @@ The schema is a regular Kotlin DSL — `formSchema<V> { … }` is a normal funct
 
 #### Cross-field rules
 
-Use `custom`, which receives the value at the field being declared (`v`) and exposes the whole form snapshot as `values`:
+Use `custom`. The rule lambda takes two arguments — the value at the field being declared (`v`) and
+the whole form snapshot (`all`) — and returns a **nullable error message** (return `null` to pass,
+a non-null `String` to fail):
 
 ```kotlin
 val schema = formSchema<Map<String, Any?>> {
@@ -123,9 +129,9 @@ val schema = formSchema<Map<String, Any?>> {
     }
     field("confirm") {
         required()
-        // `v` is the current value at "confirm". `values` is the whole form snapshot,
-        // so you can compare to any other path at validation time.
-        custom("Doesn't match") { v -> v == values["password"] }
+        // `v` is the current value at "confirm"; `all` is the whole form snapshot, so you can
+        // compare to any other path. Return null to pass, a message to fail.
+        custom("Doesn't match") { v, all -> if (v == all["password"]) null else "Doesn't match" }
     }
 }
 ```
@@ -149,7 +155,7 @@ val schema = formSchema<Map<String, Any?>> {
 | Best for | one-off forms; logic that doesn't fit a rule shape; complex conditional branching | reusable validation; multiple forms sharing rules; validation that needs to be inspected |
 | Multi-error per field | hand-rolled with `buildErrors` | built-in via `failFast = false` |
 | Render required-field markers without running validation | manual bookkeeping | `schema.isRequired("email")` directly |
-| Cross-field checks | any Kotlin you want | `custom { v -> … values["…"] }` |
+| Cross-field checks | any Kotlin you want | `custom { v, all -> … all["…"] }` |
 
 You can also combine them — set a `schemaValidator` AND a `validate` callback on the same `FormikConfig`; both run and their errors merge.
 
@@ -162,10 +168,11 @@ val schema = formSchema<Map<String, Any?>>(failFast = false) {
     field("password") {
         required()
         minLength(8)
-        custom("Must contain a digit") { it.toString().any(Char::isDigit) }
+        custom("Must contain a digit") { v, _ -> if (v.toString().any(Char::isDigit)) null else "Must contain a digit" }
     }
 }
-schema.validateAllField(values, "password")
+// validateAllField suspends — call it from a coroutine or suspend function:
+val errors = schema.validateAllField(values, "password")
 // ["Required", "Too short", "Must contain a digit"]
 ```
 
@@ -366,8 +373,8 @@ Maven Central release process: [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.
 
 - The Compose adapter ships as a Compose Multiplatform module (Android / Desktop JVM / iOS targets). Web / WASM targets aren't built yet.
 - iOS device target compiles but isn't exercised in CI; the iOS simulator target is.
-- KSP `@FormValues` generation handles flat and nested `data class`es. Lists, maps, sealed types, and generics aren't covered yet.
-- No CI workflow shipped — releases run from a local machine.
+- KSP `@FormValues` generation handles flat and nested `data class`es; `List`/`Map` properties are set by full-value replacement (no per-index typed accessor yet). Unsupported targets (non-data, sealed, abstract, generic classes) are reported with a clear error rather than miscompiled.
+- CI (`.github/workflows/ci.yml`) runs JVM + Android + KSP tests, the iOS-simulator tests, the public-ABI check, and verifies publication wiring via `publishToMavenLocal` on every push/PR to `main`. A signed, secret-driven Maven Central **release** is not yet automated — releases are still run from a local machine (see [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md)).
 
 ## Credit
 

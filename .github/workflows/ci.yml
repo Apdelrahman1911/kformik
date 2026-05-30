@@ -39,6 +39,10 @@ jobs:
             :examples:compileKotlin \
             --warning-mode=all
 
+      - name: Binary-compatibility check (public ABI)
+        # Fails if the committed api/*.api baselines drift; run `./gradlew apiDump` to update.
+        run: ./gradlew apiCheck --warning-mode=all
+
       - name: publishToMavenLocal (unsigned)
         # The signing block is inert without SIGNING_KEY / SIGNING_PASSWORD, so this
         # verifies the publication wiring without needing any secret in CI.

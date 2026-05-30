@@ -25,9 +25,16 @@ package io.kformik.ksp
  * plugins { id("com.google.devtools.ksp") version "2.0.21-1.0.27" }
  * dependencies {
  *     implementation(project(":kformik"))
+ *     // @FormValues is @Retention(SOURCE) and lives in :kformik-ksp, so it must be on the main
+ *     // compile classpath too — the ksp(...) configuration alone does not provide it.
+ *     compileOnly(project(":kformik-ksp"))
  *     ksp(project(":kformik-ksp"))
  * }
  * ```
+ *
+ * For external (Maven Central) consumers, the equivalent is
+ * `compileOnly("io.github.apdelrahman1911:kformik-ksp:<version>")` alongside
+ * `ksp("io.github.apdelrahman1911:kformik-ksp:<version>")`.
  */
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.SOURCE)
