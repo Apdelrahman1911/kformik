@@ -61,6 +61,7 @@ fun <V> rememberFormik(
     validateOnMount: Boolean = false,
     enableReinitialize: Boolean = false,
     valuesUpdater: ValuesUpdater<V>? = null,
+    onError: ((Throwable) -> Unit)? = null,   // failures from fire-and-forget submit()/resetForm()
     key: Any? = Unit,
 ): ComposeFormik<V>
 ```

@@ -230,7 +230,8 @@ class StateSnapshot internal constructor(controller: FormikController<Map<String
     fun value(name: String): Any? = state.values[name]
     fun error(name: String): String? = state.errors[name]
     fun isTouched(name: String): Boolean = state.touched[name]
-    fun displayError(name: String): String? = if (isTouched(name)) error(name) else null
+    // Mirror the controller/Compose displayError: a blank-but-present error is not surfaced.
+    fun displayError(name: String): String? = if (isTouched(name)) error(name)?.takeIf { it.isNotEmpty() } else null
 
     fun errors(): Map<String, String> = state.errors.byPath
     fun touched(): Map<String, Boolean> = state.touched.byPath
