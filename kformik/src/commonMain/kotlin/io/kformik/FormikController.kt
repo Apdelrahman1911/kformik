@@ -296,6 +296,30 @@ class FormikController<V>(
         )
     }
 
+    /**
+     * A field-grained [StateFlow] of the [FieldBinding] for [name]. Unlike observing the whole
+     * [state], a collector of this flow is only notified when *this field's* own data slices
+     * (value / error / touched and their initial counterparts) actually change — a keystroke in
+     * another field, or `isValidating` toggling, does not emit. This is the building block for
+     * field-grained recomposition in the Compose adapter. Implemented as a non-launching facade,
+     * so it spawns no long-lived collector job.
+     */
+    fun fieldFlow(name: String): StateFlow<FieldBinding<Any?>> {
+        require(name.isNotBlank()) { "Field name must not be blank" }
+        return DerivedStateFlow(
+            valueFn = { makeBinding(name) },
+            flowFn = {
+                combine(_state, _initialState) { _, _ -> makeBinding(name) }
+                    .distinctUntilChanged { a, b ->
+                        // Compare only the data-bearing slices; ignore the (always-fresh) callback lambdas.
+                        a.value == b.value && a.error == b.error && a.touched == b.touched &&
+                            a.initialValue == b.initialValue && a.initialError == b.initialError &&
+                            a.initialTouched == b.initialTouched
+                    }
+            },
+        )
+    }
+
     private fun makeBinding(name: String): FieldBinding<Any?> {
         val s = _state.value
         val init = _initialState.value

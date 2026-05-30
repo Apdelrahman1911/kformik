@@ -1,17 +1,20 @@
 package io.kformik.compose
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import io.kformik.FieldBinding
 import io.kformik.FormikActions
 import io.kformik.FormikConfig
 import io.kformik.FormikController
 import io.kformik.FormikErrors
+import io.kformik.FormikInitialState
 import io.kformik.FormikResetHandler
 import io.kformik.FormikState
 import io.kformik.FormikSubmitHandler
@@ -54,10 +57,15 @@ import kotlinx.coroutines.launch
  * }
  * ```
  *
- * State observation goes through Compose `State<...>` snapshots so recomposition is automatic
- * and field-grained. The underlying coroutines run on the scope returned by
- * [rememberCoroutineScope] and are cancelled when the composable leaves the composition.
+ * State observation goes through Compose `State<...>` snapshots. Reading [state] is whole-form:
+ * any change to any field (or `isValidating`/`isSubmitting`/`submitCount`) recomposes every reader
+ * of `form.state.value`. For field-grained recomposition — a reader that only recomposes when *its*
+ * field changes — use [fieldState], which is backed by a per-field deduplicated flow. The
+ * underlying coroutines run on the scope returned by [rememberCoroutineScope] and are cancelled when
+ * the composable leaves the composition (which is also what stops accepting mutations — see
+ * [rememberFormik]).
  */
+@Stable
 class ComposeFormik<V> internal constructor(
     val controller: FormikController<V>,
     private val scope: CoroutineScope,
@@ -89,21 +97,32 @@ class ComposeFormik<V> internal constructor(
         @Composable get() = controller.isValid.collectAsState()
 
     /**
-     * Snapshot-friendly derived state for a single field. Returns a re-computed `FieldBinding` on
-     * every state change. Best used inside a composable so recomposition picks up the new value:
+     * Field-grained observable [FieldBinding] for [name]. Backed by [FormikController.fieldFlow],
+     * which only emits when *this field's* value/error/touched (or their initial counterparts)
+     * change — so a composable reading only this state does not recompose on keystrokes in other
+     * fields or on `isValidating` toggles.
+     *
+     * The binding's `value` is `Any?`; its `onValueChange`/`onFocusChange` are `suspend` and so
+     * cannot be wired directly into Compose UI callbacks — route writes through
+     * [setFieldValue]/[setFieldTouched] (or [launch]) instead:
      *
      * ```kotlin
      * val email by form.fieldState("email")
-     * TextField(email.value as String, onValueChange = { form.setFieldValue("email", it) })
+     * TextField(
+     *     value = email.value as String,
+     *     onValueChange = { form.setFieldValue("email", it) },
+     *     isError = email.displayError != null,
+     * )
      * ```
      */
     @Composable
     fun fieldState(name: String): State<FieldBinding<Any?>> {
-        val state = state.value
-        return remember(state, name) {
-            derivedStateOf { controller.field(name) }
-        }
+        val flow = remember(name) { controller.fieldFlow(name) }
+        return flow.collectAsState()
     }
+
+    /** Typed snapshot read of the value at [name] (delegates to [FormikController.fieldOf]). */
+    inline fun <reified T> valueOf(name: String): T = controller.fieldOf<T>(name).value
 
     // ------------------------------------------------------------------- snapshot accessors
 
@@ -153,12 +172,19 @@ class ComposeFormik<V> internal constructor(
 /**
  * Create-or-remember a Compose-bound [FormikController] for [V].
  *
- * The controller is created on first composition and disposed (via its internal scope) when the
- * composable leaves. Configuration parameters are read on first creation; changing them across
- * recompositions does **not** rebuild the controller (this matches Formik's React semantics — the
- * config snapshot is taken on first render).
+ * The controller is created on first composition (or when [key] changes) and bound to the
+ * composable's [rememberCoroutineScope]. When the composable leaves the composition Compose cancels
+ * that scope, which tears down in-flight work and causes subsequent mutations to be silently
+ * dropped — so no explicit disposal call is needed (and `controller.close()` is intentionally a
+ * no-op here, because the scope is caller-owned).
  *
- * To force a rebuild, change the [key] argument.
+ * The `onSubmit` / `validate` / `onReset` / `onError` callbacks are tracked with
+ * [rememberUpdatedState], so they always reflect the latest composition even though the controller
+ * itself is built once — they may freely close over changing props without going stale.
+ *
+ * When [enableReinitialize] is true, changing [initialValues] across recompositions re-syncs the
+ * baseline (via [FormikController.reinitialize]); the first composition is skipped so the initial
+ * snapshot is preserved. Changing [key] forces a full rebuild (discarding user edits).
  */
 @Composable
 fun <V> rememberFormik(
@@ -172,29 +198,49 @@ fun <V> rememberFormik(
     validateOnMount: Boolean = false,
     enableReinitialize: Boolean = false,
     valuesUpdater: ValuesUpdater<V>? = null,
+    onError: ((Throwable) -> Unit)? = null,
     key: Any? = Unit,
 ): ComposeFormik<V> {
     val scope = rememberCoroutineScope()
+
+    // Always-fresh references so callbacks captured on first composition don't go stale.
+    val onSubmitState = rememberUpdatedState(onSubmit)
+    val validateState = rememberUpdatedState(validate)
+    val onResetState = rememberUpdatedState(onReset)
+    val onErrorState = rememberUpdatedState(onError)
+
     val composeFormik = remember(key) {
         val controller = FormikController(
             FormikConfig(
                 initialValues = initialValues,
-                validate = validate,
+                validate = { v -> validateState.value?.invoke(v) ?: FormikErrors.Empty },
                 schemaValidator = schemaValidator,
-                onSubmit = onSubmit,
-                onReset = onReset,
+                onSubmit = { v, actions -> onSubmitState.value(v, actions) },
+                onReset = { v, actions -> onResetState.value?.invoke(v, actions) },
                 validateOnChange = validateOnChange,
                 validateOnBlur = validateOnBlur,
                 validateOnMount = validateOnMount,
                 enableReinitialize = enableReinitialize,
                 valuesUpdater = valuesUpdater,
+                onError = { t -> onErrorState.value?.invoke(t) },
                 coroutineScope = scope,
             )
         )
         ComposeFormik(controller, scope)
     }
-    DisposableEffect(composeFormik) {
-        onDispose { composeFormik.controller.close() }
+
+    if (enableReinitialize) {
+        val firstPass = remember(composeFormik) { mutableStateOf(true) }
+        LaunchedEffect(composeFormik, initialValues) {
+            if (firstPass.value) {
+                firstPass.value = false
+                return@LaunchedEffect
+            }
+            // reinitialize() deep-equals the new baseline and early-returns when unchanged, so
+            // re-running this effect is cheap/idempotent.
+            composeFormik.controller.reinitialize(FormikInitialState(values = initialValues))
+        }
     }
+
     return composeFormik
 }
