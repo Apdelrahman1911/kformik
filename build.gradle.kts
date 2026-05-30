@@ -8,13 +8,23 @@ plugins {
     id("com.android.application") version "8.5.2" apply false
     id("org.jetbrains.dokka") version "1.9.20" apply false
     id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
+    id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.16.3"
 }
 
 // ----- centralized group + version -----
 // Modules don't set their own group/version; they inherit from these properties (defined in
-// gradle.properties). One file to edit when cutting a release.
-group = providers.gradleProperty("kformikGroup").orElse("io.github.apdelrahman1911").get()
-version = providers.gradleProperty("kformikVersion").orElse("1.4.0-SNAPSHOT").get()
+// gradle.properties). One file to edit when cutting a release. Fail fast if a key is missing
+// rather than silently publishing stale coordinates.
+group = providers.gradleProperty("kformikGroup").get()
+version = providers.gradleProperty("kformikVersion").get()
+
+// ----- ABI guardrail: Binary Compatibility Validator -----
+// `./gradlew apiDump` regenerates the committed `<module>/api/*.api` baselines; `apiCheck`
+// (wired into `check`) fails the build on an unintended public-ABI change. Non-published
+// demo modules are excluded.
+apiValidation {
+    ignoredProjects += listOf("examples", "sample-android-app")
+}
 
 subprojects {
     group = rootProject.group
