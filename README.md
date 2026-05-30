@@ -28,7 +28,21 @@ form.submit()
 
 ## Install
 
+The plugins you'll need depend on what you're building. Apply only what's relevant — core users don't need anything beyond the Kotlin plugin.
+
 ```kotlin
+plugins {
+    kotlin("jvm") version "2.0.21"                              // or kotlin("multiplatform") / kotlin("android")
+
+    // Only if you use @FormValues — the ksp(...) dep below requires this plugin.
+    id("com.google.devtools.ksp") version "2.0.21-1.0.27"
+
+    // Only if you use the Compose adapter. For pure Android Compose, the Android Compose
+    // plugin works too; the JetBrains one is what enables KMP shared composables.
+    id("org.jetbrains.compose") version "1.7.3"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
+}
+
 repositories {
     mavenCentral()
     google()
@@ -60,19 +74,86 @@ Three validation flavors, mix and match:
 - an async one (`suspend (V) -> FormikErrors`)
 - a schema DSL
 
-```kotlin
-val schema = formSchema<Map<String, Any?>> {
-    field("email")    { required(); email() }
-    field("password") { required(); minLength(8) }
-    field("confirm")  { required(); custom("Doesn't match") { v -> v == values["password"] } }
-}
+#### Same form, two ways
 
-val form = FormikController(FormikConfig(
-    initialValues = mapOf("email" to "", "password" to "", "confirm" to ""),
+```kotlin
+// Style A — plain validate callback. Just Kotlin. Good when the logic doesn't fit a rule shape
+// or you want fine-grained control over conditionals.
+val formA = FormikController(FormikConfig(
+    initialValues = mapOf("email" to "", "password" to ""),
+    validate = { v -> buildErrors {
+        if ((v["email"] as String).isBlank())     put("email", "Required")
+        if ((v["password"] as String).length < 8) put("password", "Too short")
+    }},
+    onSubmit = { /* … */ },
+))
+
+// Style B — schema DSL. Same rules, declared field by field. Introspectable; rules are data.
+val schema = formSchema<Map<String, Any?>> {
+    field("email") {
+        required()
+    }
+    field("password") {
+        required()
+        minLength(8)
+    }
+}
+val formB = FormikController(FormikConfig(
+    initialValues = mapOf("email" to "", "password" to ""),
     schemaValidator = schema,
     onSubmit = { /* … */ },
 ))
 ```
+
+The schema is a regular Kotlin DSL — `formSchema<V> { … }` is a normal function with a lambda receiver, like `buildString { }` or `apply { }`. Inside it, `field("name") { … }` opens a builder for one path's rules. No code generation or compiler magic — every block is just a method call with a trailing lambda.
+
+#### Built-in rules
+
+`required`, `minLength`, `maxLength`, `email`, `pattern` (regex), `min`, `max` (numeric), and `custom` for anything else. Full reference: [`docs/SCHEMA_VALIDATION.md`](docs/SCHEMA_VALIDATION.md).
+
+#### Cross-field rules
+
+Use `custom`, which receives the value at the field being declared (`v`) and exposes the whole form snapshot as `values`:
+
+```kotlin
+val schema = formSchema<Map<String, Any?>> {
+    field("password") {
+        required()
+        minLength(8)
+    }
+    field("confirm") {
+        required()
+        // `v` is the current value at "confirm". `values` is the whole form snapshot,
+        // so you can compare to any other path at validation time.
+        custom("Doesn't match") { v -> v == values["password"] }
+    }
+}
+```
+
+#### Nested fields and array indices
+
+Field paths in the schema accept the same dot / bracket syntax as `setFieldValue`:
+
+```kotlin
+val schema = formSchema<Map<String, Any?>> {
+    field("user.email")          { required(); email() }
+    field("user.address.city")   { required() }
+    field("tags[0]")             { minLength(3) }
+}
+```
+
+#### When to use which
+
+| | Plain `validate = { … }` | Schema DSL |
+|---|---|---|
+| Best for | one-off forms; logic that doesn't fit a rule shape; complex conditional branching | reusable validation; multiple forms sharing rules; validation that needs to be inspected |
+| Multi-error per field | hand-rolled with `buildErrors` | built-in via `failFast = false` |
+| Render required-field markers without running validation | manual bookkeeping | `schema.isRequired("email")` directly |
+| Cross-field checks | any Kotlin you want | `custom { v -> … values["…"] }` |
+
+You can also combine them — set a `schemaValidator` AND a `validate` callback on the same `FormikConfig`; both run and their errors merge.
+
+#### Multi-error collection
 
 By default the schema stops at the first failing rule per field. Pass `failFast = false` to collect every failure:
 
@@ -88,7 +169,9 @@ schema.validateAllField(values, "password")
 // ["Required", "Too short", "Must contain a digit"]
 ```
 
-The schema is also introspectable, so you can render required-field markers without running validation:
+#### Introspection
+
+The schema is data — you can ask it questions without running validation:
 
 ```kotlin
 schema.isRequired("email")        // true
