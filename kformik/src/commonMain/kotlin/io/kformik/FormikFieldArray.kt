@@ -1,9 +1,5 @@
 package io.kformik
 
-import io.kformik.internal.PathParser
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-
 /**
  * Imperative array-field helpers. Mirrors Formik's `<FieldArray>` mutation helpers:
  *
@@ -220,34 +216,25 @@ class FieldArrayController<V> internal constructor(
         shouldValidate: Boolean?,
     ) {
         val willValidate = shouldValidate ?: controller.validateOnChange
-        val newValues: V = controller.applyAtomic { state ->
-            val currentList = (controller.valueAt(path) as? List<Any?>) ?: emptyList()
+        controller.applyArrayMutation(validate = willValidate) { state ->
+            // Read the current list from the locked snapshot (`state`), not the live controller, so
+            // the transform is a pure function of `state` and cannot tear against a concurrent write.
+            val currentList = (controller.updaterValue.getAt(state.values, path) as? List<Any?>) ?: emptyList()
             val newList = fn(currentList)
 
             val newValuesObj = controller.updaterValue.setAt(state.values, path, newList)
 
+            // touched/errors are stored flat by path; realign index-keyed entries (e.g. "friends[0]")
+            // so they keep pointing at the same logical row after the structural change.
             val newTouched: FormikTouched = if (alterTouched) {
-                val touchedListPath = path
-                val current = state.touched.byPath
-                // Touched array alignment is represented as a list stored under the array's own path;
-                // Kformik stores touched flat by path, so we only need to ensure parallel index keys exist.
-                // The simplest correct behavior: nothing to align in the flat map. Index-keyed touched
-                // entries (e.g. "friends[0]") are written by setFieldTouched and are NOT re-indexed by
-                // FieldArray operations — matching Formik's behavior, which only aligns the *nested*
-                // touched array, not separate flat paths.
-                val realigned = realignIndexedKeys(current, touchedListPath, currentList.size, fn, alignFn)
-                FormikTouched(realigned)
+                FormikTouched(realignIndexedKeys(state.touched.byPath, path, currentList.size, alignFn))
             } else state.touched
 
             val newErrors: FormikErrors = if (alterErrors) {
-                val realigned = realignIndexedKeys(state.errors.byPath, path, currentList.size, fn, alignFn)
-                FormikErrors(realigned)
+                FormikErrors(realignIndexedKeys(state.errors.byPath, path, currentList.size, alignFn))
             } else state.errors
 
             state.copy(values = newValuesObj, touched = newTouched, errors = newErrors)
-        }
-        if (willValidate) {
-            controller.runValidationsFromArray(newValues)
         }
     }
 
@@ -265,7 +252,6 @@ class FieldArrayController<V> internal constructor(
         flat: Map<String, T>,
         arrayPath: String,
         currentSize: Int,
-        fn: (List<Any?>) -> List<Any?>,
         alignFn: (List<Any?>) -> List<Any?>,
     ): Map<String, T> {
         val prefix = "$arrayPath["

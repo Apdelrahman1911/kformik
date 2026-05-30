@@ -55,11 +55,21 @@ data class FormikConfig<V>(
 
     /**
      * Strategy for reading/writing nested fields inside [V]. If null, the controller picks a
-     * sensible default: [MapValuesUpdater] when [initialValues] is a [Map], otherwise an
-     * identity updater that only supports flat top-level field names (any path with a dot
-     * will throw).
+     * sensible default: [MapValuesUpdater] when [initialValues] is a [Map]. For a non-[Map] [V]
+     * with no updater supplied the controller fails fast at construction (see [FormikController]),
+     * since it has no way to read or write fields.
      *
      * For typed `data class` values, provide a hand-written or codegen'd updater.
      */
     val valuesUpdater: ValuesUpdater<V>? = null,
+
+    /**
+     * Optional error sink for the fire-and-forget [FormikController.handleSubmit] /
+     * [FormikController.handleReset] entry points. When `onSubmit`/`onReset` throws on those
+     * non-awaited paths, the throwable is delivered here instead of being silently swallowed.
+     * [kotlinx.coroutines.CancellationException] is never delivered — it propagates so structured
+     * concurrency keeps working. The awaitable [FormikController.submit] / [FormikController.resetForm]
+     * still throw to their caller regardless of this hook.
+     */
+    val onError: ((Throwable) -> Unit)? = null,
 )

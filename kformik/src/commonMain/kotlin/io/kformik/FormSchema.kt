@@ -150,6 +150,28 @@ class FormSchema<V> internal constructor(
     }
 
     /**
+     * Like [validateField], but also consults cross-field rules ([cross]) that produce an error
+     * keyed at [path]. Used by [FormikController.validateField] so a field whose only error comes
+     * from a cross-field constraint (e.g. a confirm-password mismatch) is not erroneously cleared
+     * when the field itself has no per-field rule. Per-field rules win over cross-field (first
+     * match returns), matching the precedence of the full [validate].
+     */
+    suspend fun validateFieldIncludingCross(values: V, path: String): String? {
+        perField[path]?.let { rules ->
+            val value = readValue(values, path)
+            for (rule in rules) {
+                val msg = rule.check(value, values)
+                if (msg != null) return msg
+            }
+        }
+        for (rule in crossField) {
+            val errs = rule(values)
+            errs.byPath[path]?.let { return it }
+        }
+        return null
+    }
+
+    /**
      * Multi-error single-field validation. Returns every failing rule's message for [path], or an
      * empty list if all pass / the path is unknown. Honors the per-field `failFast` flag.
      */
