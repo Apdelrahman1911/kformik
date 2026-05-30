@@ -5,6 +5,7 @@ import io.kformik.FormikController
 import io.kformik.FormikErrors
 import io.kformik.FormikState
 import io.kformik.FormikSubmitHandler
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -12,7 +13,10 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.experimental.ExperimentalObjCName
+import kotlin.native.ObjCName
 
 /**
  * Swift/SwiftUI-friendly façade over [FormikController].
@@ -74,12 +78,15 @@ import kotlin.coroutines.cancellation.CancellationException
  * }
  * ```
  */
+@OptIn(ExperimentalObjCName::class)
 class FormikIosBridge private constructor(
     val controller: FormikController<Map<String, Any?>>,
     private val scope: CoroutineScope,
+    private val callbackDispatcher: CoroutineDispatcher,
 ) {
 
     /** Opaque token returned by [observe]. Hold a reference until you no longer want updates. */
+    @ObjCName("FormikSubscription")
     class Subscription internal constructor(private val job: Job) {
         fun cancel() = job.cancel()
         val isActive: Boolean get() = job.isActive
@@ -89,12 +96,18 @@ class FormikIosBridge private constructor(
      * Subscribe to state changes. [onState] is invoked once immediately with the current snapshot,
      * then again every time the state differs from the previous emission (deep-equal).
      *
+     * The callback is dispatched on [callbackDispatcher] (default [Dispatchers.Main]), so it is safe
+     * to update `@Published`/UIKit from inside it regardless of which scope the bridge runs work on.
+     *
      * The returned [Subscription] should be held; `subscription.cancel()` stops further callbacks.
      * If [close] is called on the bridge, all active subscriptions are cancelled.
      */
     fun observe(onState: (StateSnapshot) -> Unit): Subscription {
         val job = scope.launch {
-            controller.state.collect { onState(StateSnapshot(controller)) }
+            controller.state.collect {
+                val snap = StateSnapshot(controller)
+                withContext(callbackDispatcher) { onState(snap) }
+            }
         }
         return Subscription(job)
     }
@@ -112,9 +125,20 @@ class FormikIosBridge private constructor(
         scope.launch { controller.setFieldTouched(name, isTouched, shouldValidate) }
     }
 
-    fun setFieldError(name: String, message: String?) = controller.setFieldError(name, message)
-    fun setStatus(status: Any?) = controller.setStatus(status)
-    fun setSubmitting(isSubmitting: Boolean) = controller.setSubmitting(isSubmitting)
+    // Routed through the scope (like the value/touched setters) so a Swift caller's call order is
+    // preserved: e.g. setFieldValue("email", v) then setFieldError("email", serverErr) commits the
+    // error AFTER the value's revalidation, instead of having it cleared by the later async write.
+    fun setFieldError(name: String, message: String?) {
+        scope.launch { controller.setFieldError(name, message) }
+    }
+
+    fun setStatus(status: Any?) {
+        scope.launch { controller.setStatus(status) }
+    }
+
+    fun setSubmitting(isSubmitting: Boolean) {
+        scope.launch { controller.setSubmitting(isSubmitting) }
+    }
 
     /** Fire-and-forget submit. */
     fun submit() = controller.handleSubmit()
@@ -149,6 +173,7 @@ class FormikIosBridge private constructor(
             validateOnBlur: Boolean = true,
             validateOnMount: Boolean = false,
             mainScope: CoroutineScope = MainScope(),
+            callbackDispatcher: CoroutineDispatcher = Dispatchers.Main,
         ): FormikIosBridge {
             val config = FormikConfig(
                 initialValues = initialValues,
@@ -159,17 +184,47 @@ class FormikIosBridge private constructor(
                 validateOnMount = validateOnMount,
                 coroutineScope = mainScope,
             )
-            return FormikIosBridge(FormikController(config), mainScope)
+            return FormikIosBridge(FormikController(config), mainScope, callbackDispatcher)
         }
+
+        /**
+         * Swift-friendly overload taking a **non-suspending** `onSubmit` (`(values) -> Unit`). This
+         * keeps the bridge's "no async/await ceremony" promise: a vanilla Kotlin/Native consumer can
+         * pass a plain closure `{ values in … }` without SKIE. The closure runs on [mainScope].
+         */
+        fun createSimple(
+            initialValues: Map<String, Any?>,
+            validate: ((Map<String, Any?>) -> Map<String, String>)? = null,
+            onSubmit: (Map<String, Any?>) -> Unit,
+            validateOnChange: Boolean = true,
+            validateOnBlur: Boolean = true,
+            validateOnMount: Boolean = false,
+            mainScope: CoroutineScope = MainScope(),
+            callbackDispatcher: CoroutineDispatcher = Dispatchers.Main,
+        ): FormikIosBridge = create(
+            initialValues = initialValues,
+            validate = validate,
+            onSubmit = { v, _ -> onSubmit(v) },
+            validateOnChange = validateOnChange,
+            validateOnBlur = validateOnBlur,
+            validateOnMount = validateOnMount,
+            mainScope = mainScope,
+            callbackDispatcher = callbackDispatcher,
+        )
     }
 }
 
 /**
  * Immutable snapshot of the form state at a point in time. All accessors are non-suspending and
- * return plain Kotlin/Swift-bridge types.
+ * return plain Kotlin/Swift-bridge types. The [isDirty]/[isValid] flags are captured at construction
+ * so the snapshot stays self-consistent.
  */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("FormikStateSnapshot")
 class StateSnapshot internal constructor(controller: FormikController<Map<String, Any?>>) {
     private val state: FormikState<Map<String, Any?>> = controller.state.value
+    private val dirty: Boolean = controller.dirty.value
+    private val valid: Boolean = controller.isValid.value
 
     fun values(): Map<String, Any?> = state.values
     fun value(name: String): Any? = state.values[name]
@@ -184,4 +239,10 @@ class StateSnapshot internal constructor(controller: FormikController<Map<String
     fun isSubmitting(): Boolean = state.isSubmitting
     fun isValidating(): Boolean = state.isValidating
     fun submitCount(): Int = state.submitCount
+
+    /** Whether current values differ from the initial-values baseline (Formik `dirty`). */
+    fun isDirty(): Boolean = dirty
+
+    /** Whether the form currently has no errors (Formik `isValid`). */
+    fun isValid(): Boolean = valid
 }

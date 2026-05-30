@@ -107,9 +107,14 @@ kotlin {
         publishLibraryVariants("release")
     }
 
-    iosX64()
-    iosArm64()
-    iosSimulatorArm64()
+    // Declare a framework binary on each iOS target so the documented
+    // `linkReleaseFrameworkIos*` / `linkDebugFrameworkIos*` tasks actually exist and consumers can
+    // add the produced Kformik.framework to Xcode (see docs/IOS_USAGE.md).
+    listOf(iosX64(), iosArm64(), iosSimulatorArm64()).forEach { target ->
+        target.binaries.framework {
+            baseName = "Kformik"
+        }
+    }
 
     // Intermediate iosMain / iosTest source sets shared by all three iOS targets.
     @Suppress("UNUSED_VARIABLE")

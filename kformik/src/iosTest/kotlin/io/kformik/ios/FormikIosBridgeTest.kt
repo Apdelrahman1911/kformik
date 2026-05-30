@@ -47,6 +47,8 @@ class FormikIosBridgeTest {
             validate = validate,
             onSubmit = onSubmit,
             mainScope = scope,
+            // No main runloop in the test target; deliver observe callbacks synchronously.
+            callbackDispatcher = Dispatchers.Unconfined,
         )
         bridges += bridge
         return bridge
@@ -328,6 +330,43 @@ class FormikIosBridgeTest {
 
         assertTrue(seenA.contains("hello"))
         assertTrue(seenB.contains("hello"))
+    }
+
+    // ---------------------------------------------------------------------- dirty / valid / createSimple
+
+    @Test
+    fun snapshot_exposesDirtyAndValid() = runTest {
+        val b = newBridge(
+            initial = mapOf("email" to "x@y.com"),
+            validate = { v -> if ((v["email"] as String).isBlank()) mapOf("email" to "Required") else emptyMap() },
+        )
+        // pristine + no errors
+        assertFalse(b.snapshot().isDirty())
+        assertTrue(b.snapshot().isValid())
+
+        b.setFieldValue("email", "")
+        yield()
+        // changed from baseline, and now invalid
+        assertTrue(b.snapshot().isDirty())
+        assertFalse(b.snapshot().isValid())
+    }
+
+    @Test
+    fun createSimple_nonSuspendOnSubmit_works() = runTest {
+        var submitted: Map<String, Any?>? = null
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        scopes += scope
+        val b = FormikIosBridge.createSimple(
+            initialValues = mapOf("email" to "a@b.com"),
+            onSubmit = { values -> submitted = values },
+            mainScope = scope,
+            callbackDispatcher = Dispatchers.Unconfined,
+        )
+        bridges += b
+        b.submit()
+        yield()
+        testScheduler.advanceUntilIdle()
+        assertEquals("a@b.com", submitted?.get("email"))
     }
 
     @Test
