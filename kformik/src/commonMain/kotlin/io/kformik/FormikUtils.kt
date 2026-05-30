@@ -44,7 +44,9 @@ fun Map<String, Any?>.path(path: String): Any? = getIn(this, path)
  * [io.kformik.internal.PathParser].
  */
 fun getIn(values: Any?, path: String, default: Any? = null): Any? {
-    if (path.isEmpty()) return values ?: default
+    // Treat a blank path (empty or all-whitespace) as "the whole object", symmetric with the
+    // empty-string fast path, rather than looking up a literal whitespace key.
+    if (path.isBlank()) return values ?: default
     val segments = io.kformik.internal.PathParser.parse(path)
     var current: Any? = values
     for (segment in segments) {

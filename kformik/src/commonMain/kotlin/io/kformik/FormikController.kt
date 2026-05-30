@@ -4,8 +4,10 @@ package io.kformik
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -337,7 +339,9 @@ class FormikController<V>(
             initialError = initialError,
             touched = touched,
             initialTouched = initialTouched,
-            displayError = if (touched) error else null,
+            // Don't surface a blank-but-present error decoration (a validator returning "" still
+            // creates an error key); the field is still counted invalid by isValid, matching Formik.
+            displayError = if (touched) error?.takeIf { it.isNotEmpty() } else null,
             onValueChange = { newValue -> setFieldValue(name, newValue) },
             onFocusChange = { focused -> if (!focused) setFieldTouched(name, true) },
             setError = { msg -> setFieldError(name, msg) },
@@ -460,7 +464,12 @@ class FormikController<V>(
         _state.update { if (it.isValidating) it else it.copy(isValidating = true) }
     }
 
-    /** Mark a validation run as finished: lower the in-flight count and republish `isValidating`. */
+    /**
+     * Mark a validation run as finished: lower the in-flight count and republish `isValidating`.
+     * Always invoked inside [NonCancellable] from a `finally`, so the flag is released even when the
+     * run was cancelled mid-flight (a suspend `mutex.withLock` would otherwise throw immediately in a
+     * cancelled coroutine and leave `isValidating` stuck true).
+     */
     private suspend fun exitValidation() = mutex.withLock {
         activeValidations = (activeValidations - 1).coerceAtLeast(0)
         val validating = activeValidations > 0
@@ -470,32 +479,29 @@ class FormikController<V>(
     /**
      * Run all configured validators against [values] and commit the merged errors — but only if
      * [gen] is still the latest validation generation at commit time (otherwise a newer mutation or
-     * a reset has superseded this run and its result is dropped). Returns the computed errors
-     * regardless, so awaiting callers ([submit], [validateForm]) see this run's own result.
+     * a reset has superseded this run, or the run was cancelled, and its result is dropped). Returns
+     * the computed errors regardless, so awaiting callers ([submit], [validateForm]) see this run's
+     * own result. `isValidating` is managed by the enter/exit pair so it survives cancellation.
      */
     private suspend fun runAllValidationsAndCommit(values: V, gen: Long): FormikErrors {
         if (!scope.isActive) return FormikErrors.Empty
         enterValidation()
-        val merged: FormikErrors = try {
-            runAllValidations(values)
-        } catch (t: Throwable) {
-            exitValidation()
-            throw t
-        }
-        mutex.withLock {
-            activeValidations = (activeValidations - 1).coerceAtLeast(0)
-            val validating = activeValidations > 0
-            val isLatest = gen == validationGeneration && scope.isActive
-            _state.update { current ->
-                if (!isLatest) {
-                    if (current.isValidating == validating) current else current.copy(isValidating = validating)
-                } else {
-                    val newErrors = if (deepEquals(current.errors.byPath, merged.byPath)) current.errors else merged
-                    current.copy(isValidating = validating, errors = newErrors)
+        try {
+            val merged = runAllValidations(values)
+            if (scope.isActive) {
+                mutex.withLock {
+                    if (gen == validationGeneration) {
+                        _state.update { current ->
+                            if (deepEquals(current.errors.byPath, merged.byPath)) current
+                            else current.copy(errors = merged)
+                        }
+                    }
                 }
             }
+            return merged
+        } finally {
+            withContext(NonCancellable) { exitValidation() }
         }
-        return merged
     }
 
     private suspend fun runAllValidations(values: V): FormikErrors {
@@ -547,7 +553,6 @@ class FormikController<V>(
         val validator = _fieldRegistry.value[name]
         val values = _state.value.values
         enterValidation()
-        var committed = false
         try {
             val msg: String? = when {
                 validator != null -> validator(updater.getAt(values, name))
@@ -558,17 +563,14 @@ class FormikController<V>(
                 config.schemaValidator != null -> config.schemaValidator!!.validate(values)[name]
                 else -> null
             }
-            committed = true
             // Commit the per-field error under the mutex (compare-and-set) so it composes with a
-            // concurrent full-validation commit, and republish isValidating from the counter.
-            mutex.withLock {
-                activeValidations = (activeValidations - 1).coerceAtLeast(0)
-                val validating = activeValidations > 0
-                _state.update { it.copy(isValidating = validating, errors = it.errors.with(name, msg)) }
+            // concurrent full-validation commit.
+            if (scope.isActive) mutex.withLock {
+                _state.update { it.copy(errors = it.errors.with(name, msg)) }
             }
             return msg
         } finally {
-            if (!committed) exitValidation()
+            withContext(NonCancellable) { exitValidation() }
         }
     }
 
@@ -593,12 +595,14 @@ class FormikController<V>(
         val submitValues: V = mutex.withLock {
             val cur = _state.value
             if (cur.isSubmitting) return  // single-flight guard (non-local return releases the lock)
-            val leafTouched: Map<String, Boolean> =
-                updater.leafPaths(cur.values).associateWith { true }
-            val registryTouched: Map<String, Boolean> =
-                _fieldRegistry.value.keys.associateWith { true }
+            // Build the touched-all map in one pass (rightmost-wins ordering) instead of two
+            // intermediate map concatenations.
             val touchedAll = FormikTouched(
-                cur.touched.byPath + leafTouched + registryTouched
+                buildMap {
+                    putAll(cur.touched.byPath)
+                    updater.leafPaths(cur.values).forEach { put(it, true) }
+                    _fieldRegistry.value.keys.forEach { put(it, true) }
+                }
             )
             gen = ++validationGeneration
             _state.update {
