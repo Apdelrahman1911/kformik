@@ -162,22 +162,25 @@ class FormSchema<V> internal constructor(
      * Like [validateField], but also consults cross-field rules ([cross]) that produce an error
      * keyed at [path]. Used by [FormikController.validateField] so a field whose only error comes
      * from a cross-field constraint (e.g. a confirm-password mismatch) is not erroneously cleared
-     * when the field itself has no per-field rule. Per-field rules win over cross-field (first
-     * match returns), matching the precedence of the full [validate].
+     * when the field itself has no per-field rule. A cross-field error **overrides** the per-field
+     * first-failing message on the same path, matching the cross-merges-last precedence of the full
+     * [validate] (so `validateField` and `validateForm` agree on the committed error for a path).
      */
     suspend fun validateFieldIncludingCross(values: V, path: String): String? {
-        perField[path]?.let { rules ->
+        var msg: String? = perField[path]?.let { rules ->
             val value = readValue(values, path)
+            var found: String? = null
             for (rule in rules) {
-                val msg = rule.check(value, values)
-                if (msg != null) return msg
+                val m = rule.check(value, values)
+                if (m != null) { found = m; break }
             }
+            found
         }
         for (rule in crossField) {
             val errs = rule(values)
-            errs.byPath[path]?.let { return it }
+            errs.byPath[path]?.let { msg = it } // cross overrides per-field, mirroring validate()'s putAll-last
         }
-        return null
+        return msg
     }
 
     /**

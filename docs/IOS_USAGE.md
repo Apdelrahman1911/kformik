@@ -64,6 +64,8 @@ class StateSnapshot {
     fun isSubmitting(): Boolean
     fun isValidating(): Boolean
     fun submitCount(): Int
+    fun isDirty(): Boolean   // current values differ from the initial baseline
+    fun isValid(): Boolean   // no errors
 }
 ```
 

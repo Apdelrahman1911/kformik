@@ -44,7 +44,7 @@ dependencies {
 }
 ```
 
-Beyond the core `api(:kformik)`, the module pulls in `compose.runtime`, `compose.runtime-saveable`, and `kotlinx-coroutines-core` (plus `kotlinx-coroutines-android` on Android for the main dispatcher) — it does **not** pull in Material 3 or `compose.foundation`. You bring whatever UI library fits each target (Material 3 for Android/Desktop; Compose Multiplatform Material for iOS).
+Beyond the core `api(:kformik)`, the module pulls in `compose.runtime` and `kotlinx-coroutines-core` (plus `kotlinx-coroutines-android` on Android for the main dispatcher) — it does **not** pull in Material 3 or `compose.foundation`. You bring whatever UI library fits each target (Material 3 for Android/Desktop; Compose Multiplatform Material for iOS).
 
 ## API
 

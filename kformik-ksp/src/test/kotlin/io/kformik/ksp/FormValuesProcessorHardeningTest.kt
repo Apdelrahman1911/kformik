@@ -179,6 +179,48 @@ class FormValuesProcessorHardeningTest {
     }
 
     @Test
+    fun nullableNestedFormValues_compiles_andRoundTrips() {
+        val src = SourceFile.kotlin(
+            "Opt.kt",
+            """
+            package app
+            import io.kformik.ksp.FormValues
+            @FormValues data class AddressValues(val city: String, val country: String)
+            @FormValues data class UserValues(val name: String, val address: AddressValues?)
+            """.trimIndent()
+        )
+        val (comp, result) = runCompile(src)
+        assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode)
+        val gen = comp.generatedFile("app", "UserValuesUpdater.kt").readText()
+        // getAt delegation is null-guarded; leafPaths elvis is parenthesized.
+        assertTrue(gen.contains("values.address?.let { app.AddressValuesUpdater.getAt(it,"))
+        assertTrue(gen.contains("?: emptySet<String>()).forEach"))
+
+        val cl = result.classLoader
+        val updaterCls = cl.loadClass("app.UserValuesUpdater")
+        val updater = updaterCls.getField("INSTANCE").get(null)
+        val addrCls = cl.loadClass("app.AddressValues")
+        val userCls = cl.loadClass("app.UserValues")
+        val getAt = updaterCls.getMethod("getAt", userCls, String::class.java)
+        val leafPaths = updaterCls.getMethod("leafPaths", userCls)
+
+        // address present: nested leaf paths are included, nested getAt resolves.
+        val addr = addrCls.getDeclaredConstructor(String::class.java, String::class.java).newInstance("Lagos", "NG")
+        val withAddr = userCls.getDeclaredConstructor(String::class.java, addrCls).newInstance("Aisha", addr)
+        assertEquals("Lagos", getAt.invoke(updater, withAddr, "address.city"))
+        @Suppress("UNCHECKED_CAST")
+        val paths = leafPaths.invoke(updater, withAddr) as Set<String>
+        assertTrue("nested leaf paths must be present when address != null", paths.contains("address.city"))
+
+        // address null: nested getAt returns null, nested leaf paths excluded — no crash.
+        val noAddr = userCls.getDeclaredConstructor(String::class.java, addrCls).newInstance("Aisha", null)
+        assertNull(getAt.invoke(updater, noAddr, "address.city"))
+        @Suppress("UNCHECKED_CAST")
+        val paths2 = leafPaths.invoke(updater, noAddr) as Set<String>
+        assertEquals(setOf("name"), paths2)
+    }
+
+    @Test
     fun nonNullField_setToNull_throwsPathNamedError() {
         val src = SourceFile.kotlin(
             "Simple.kt",

@@ -25,7 +25,6 @@ kotlin {
         commonMain.dependencies {
             api(project(":kformik"))
             implementation(compose.runtime)
-            implementation(compose.runtimeSaveable)
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
         }
         androidMain.dependencies {

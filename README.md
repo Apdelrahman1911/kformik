@@ -21,9 +21,13 @@ val form = FormikController(
     )
 )
 
-form.setFieldValue("email", "user@example.com")
-form.setFieldTouched("email", true)
-form.submit()
+// setFieldValue / setFieldTouched / submit are suspend — call them from a coroutine
+// (or use the fire-and-forget form.handleSubmit() outside one):
+scope.launch {
+    form.setFieldValue("email", "user@example.com")
+    form.setFieldTouched("email", true)
+    form.submit()
+}
 ```
 
 ## Install

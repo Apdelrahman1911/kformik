@@ -55,7 +55,7 @@ import io.kformik.compose.rememberFormik
  * ```
  */
 @Composable
-fun LoginScreenSample() {
+internal fun LoginScreenSample() {
     val form = rememberFormik(
         initialValues = mapOf<String, Any?>("email" to "", "password" to ""),
         validate = { v ->

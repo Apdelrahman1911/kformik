@@ -187,7 +187,14 @@ class FormValuesProcessor(private val env: SymbolProcessorEnvironment) : SymbolP
             for (p in props) {
                 w.appendLine("            path == \"${p.name}\" -> values.${esc(p.name)}")
                 if (p.isNested && p.nestedSimpleName != null) {
-                    w.appendLine("            path.startsWith(\"${p.name}.\") -> ${nestedUpdaterRef(p)}.getAt(values.${esc(p.name)}, path.removePrefix(\"${p.name}.\"))")
+                    // For a nullable nested field, null-guard the delegation (the nested getAt takes a
+                    // non-null receiver); a null parent resolves to null, consistent with getAt's Any? return.
+                    val getRecurse = if (p.nullable) {
+                        "values.${esc(p.name)}?.let { ${nestedUpdaterRef(p)}.getAt(it, path.removePrefix(\"${p.name}.\")) }"
+                    } else {
+                        "${nestedUpdaterRef(p)}.getAt(values.${esc(p.name)}, path.removePrefix(\"${p.name}.\"))"
+                    }
+                    w.appendLine("            path.startsWith(\"${p.name}.\") -> $getRecurse")
                 }
             }
             w.appendLine("            else -> null")
@@ -217,8 +224,10 @@ class FormValuesProcessor(private val env: SymbolProcessorEnvironment) : SymbolP
             w.appendLine("        val out = mutableSetOf<String>()")
             for (p in props) {
                 if (p.isNested && p.nestedSimpleName != null) {
+                    // Parenthesize so `.forEach` binds to the whole elvis (not just the empty fallback)
+                    // and give the empty set an explicit type argument.
                     val recv = if (p.nullable) {
-                        "values.${esc(p.name)}?.let { ${nestedUpdaterRef(p)}.leafPaths(it) } ?: emptySet()"
+                        "(values.${esc(p.name)}?.let { ${nestedUpdaterRef(p)}.leafPaths(it) } ?: emptySet<String>())"
                     } else {
                         "${nestedUpdaterRef(p)}.leafPaths(values.${esc(p.name)})"
                     }

@@ -159,6 +159,37 @@ class MiscHardeningTest {
         assertEquals(before, calls, "flag-false reinitialize must not validate")
     }
 
+    // ---- validateField cross-field precedence + stale-snapshot guard (2nd-review regressions) ----
+
+    @Test
+    fun validateField_crossFieldOverridesPerField_andAgreesWithValidateForm() = runTest {
+        val schema = formSchema<Map<String, Any?>> {
+            field("a") { custom("perfield") { _, _ -> "per-field" } }
+            cross { buildErrors { put("a", "cross-field") } }
+        }
+        val c = mapCtrl(this, initialValues = mapOf("a" to "x"), schemaValidator = schema)
+        c.validateForm()
+        assertEquals("cross-field", c.state.value.errors["a"], "validateForm: cross overrides per-field")
+        val msg = c.validateField("a")
+        assertEquals("cross-field", msg, "validateField must agree (cross overrides per-field)")
+        assertEquals("cross-field", c.state.value.errors["a"], "validateField must not downgrade the committed error")
+    }
+
+    @Test
+    fun validateField_resetDuringValidation_doesNotRepopulate() = runTest {
+        val schema = SchemaValidator<Map<String, Any?>> {
+            delay(100)
+            buildErrors { put("name", "schema-err") }
+        }
+        val c = mapCtrl(this, schemaValidator = schema)
+        val job = backgroundScope.launch { c.validateField("name") } // captures current gen, validates slowly
+        testScheduler.advanceTimeBy(10)
+        c.resetForm() // bumps generation
+        testScheduler.advanceUntilIdle()
+        job.join()
+        assertNull(c.state.value.errors["name"], "a validateField result computed before a reset must be dropped")
+    }
+
     // ---- empty-string error semantics ([77]/[112]) ------------------------------------------
 
     @Test

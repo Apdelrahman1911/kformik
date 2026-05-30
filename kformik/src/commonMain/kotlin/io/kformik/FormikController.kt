@@ -172,14 +172,20 @@ class FormikController<V>(
     ) {
         if (!scope.isActive) return
         var gen = 0L
-        val newValues: V = mutex.withLock {
-            val base = _state.value
-            val next = transform(base)
+        var newValues: Any? = null
+        mutex.withLock {
             gen = ++validationGeneration
-            _state.update { it.copy(values = next.values, touched = next.touched, errors = next.errors) }
-            next.values
+            // Run the (pure) transform INSIDE the compare-and-set, so its values/touched/errors
+            // realignment is computed against the latest state on each retry — a concurrent
+            // lock-free setter (setFieldError/setErrors/...) is therefore not clobbered.
+            _state.update { current ->
+                val next = transform(current)
+                newValues = next.values
+                next
+            }
         }
-        if (validate) runAllValidationsAndCommit(newValues, gen)
+        @Suppress("UNCHECKED_CAST")
+        if (validate) runAllValidationsAndCommit(newValues as V, gen)
     }
 
     init {
@@ -551,7 +557,11 @@ class FormikController<V>(
         require(name.isNotBlank()) { "Field name must not be blank" }
         if (!scope.isActive) return null
         val validator = _fieldRegistry.value[name]
-        val values = _state.value.values
+        // Capture the values snapshot and the current generation atomically. validateField is NOT a
+        // mutation, so it observes the current intent rather than claiming a new one.
+        val captured: Pair<V, Long> = mutex.withLock { _state.value.values to validationGeneration }
+        val values = captured.first
+        val gen = captured.second
         enterValidation()
         try {
             val msg: String? = when {
@@ -563,10 +573,13 @@ class FormikController<V>(
                 config.schemaValidator != null -> config.schemaValidator!!.validate(values)[name]
                 else -> null
             }
-            // Commit the per-field error under the mutex (compare-and-set) so it composes with a
-            // concurrent full-validation commit.
+            // Commit the per-field error under the mutex (compare-and-set), but only if no newer
+            // mutation/reset has superseded the snapshot we validated — so a slow validateField
+            // cannot overwrite a fresher full-validation result for this field.
             if (scope.isActive) mutex.withLock {
-                _state.update { it.copy(errors = it.errors.with(name, msg)) }
+                if (gen == validationGeneration) {
+                    _state.update { it.copy(errors = it.errors.with(name, msg)) }
+                }
             }
             return msg
         } finally {
@@ -682,15 +695,20 @@ class FormikController<V>(
             // Invalidate any in-flight validation started before this reset.
             validationGeneration++
             _initialState.value = FormikInitialState(values, errors, touched, status)
-            _state.value = FormikState(
-                values = values,
-                errors = errors,
-                touched = touched,
-                status = status,
-                isSubmitting = nextState?.isSubmitting ?: false,
-                isValidating = nextState?.isValidating ?: false,
-                submitCount = nextState?.submitCount ?: 0,
-            )
+            // Reset is a full-state replacement; still commit via compare-and-set (not a blind
+            // assignment) so a concurrent lock-free setter that lands mid-reset forces a retry
+            // rather than being interleaved — honoring the class-wide CAS invariant.
+            _state.update {
+                FormikState(
+                    values = values,
+                    errors = errors,
+                    touched = touched,
+                    status = status,
+                    isSubmitting = nextState?.isSubmitting ?: false,
+                    isValidating = nextState?.isValidating ?: false,
+                    submitCount = nextState?.submitCount ?: 0,
+                )
+            }
         }
     }
 
