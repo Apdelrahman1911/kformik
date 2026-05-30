@@ -14,7 +14,14 @@ import io.kformik.internal.PathParser
  *    (one-time, ~10–20 lines for most forms) and explicit.
  */
 interface ValuesUpdater<V> {
-    /** Read the value at [path]. Returns null if missing or unresolved. */
+    /**
+     * Read the value at [path]. Returns null if missing or unresolved.
+     *
+     * The returned object is a **live reference** into the form's values tree, not a copy. Values
+     * must be treated as deeply immutable — do not mutate a returned collection (use `listOf`/`mapOf`,
+     * not `mutableListOf`/`mutableMapOf`). Mutating a returned object corrupts internal state and
+     * will not emit a new state to observers.
+     */
     fun getAt(values: V, path: String): Any?
 
     /** Return a copy of [values] with [path] set to [value]. */
@@ -47,12 +54,26 @@ interface ValuesUpdater<V> {
  *    instead of a map (matches Formik's "array vs object" heuristic).
  *  - Setting a value equal to the current one returns the original map (referential equality
  *    preserved — observers can bail out cheaply).
+ *  - Clearing a nested leaf (`setAt(path, null)`) prunes any intermediate container it leaves
+ *    empty, so set-then-clear restores the original shape and `dirty` re-baselines.
+ *
+ * Contracts / caveats:
+ *  - **String-keyed maps only.** Nested maps are read/written by the string path segment; a map
+ *    with non-`String` keys will not resolve and writes would insert a parallel `String` key.
+ *  - **Descending through a scalar replaces it.** If a path descends through an existing non-Map/
+ *    non-List value (e.g. `setAt(mapOf("a" to 1), "a.b", 2)`), that scalar is discarded and a fresh
+ *    container is created — mirroring lodash `set` / Formik `setIn`. An over-deep path (typo/schema
+ *    drift) therefore silently overwrites the stored scalar rather than erroring.
+ *  - Negative and excessively large (> current size + 10_000) list indices are treated as no-ops,
+ *    matching the graceful handling of non-numeric segments.
  */
 @Suppress("UNCHECKED_CAST")
 object MapValuesUpdater : ValuesUpdater<Map<String, Any?>> {
 
-    override fun getAt(values: Map<String, Any?>, path: String): Any? {
-        val segments = PathParser.parse(path)
+    override fun getAt(values: Map<String, Any?>, path: String): Any? =
+        getAtSegments(values, PathParser.parse(path))
+
+    private fun getAtSegments(values: Map<String, Any?>, segments: List<String>): Any? {
         var current: Any? = values
         for (segment in segments) {
             current = when (current) {
@@ -67,8 +88,10 @@ object MapValuesUpdater : ValuesUpdater<Map<String, Any?>> {
 
     override fun setAt(values: Map<String, Any?>, path: String, value: Any?): Map<String, Any?> {
         val segments = PathParser.parse(path)
-        require(segments.isNotEmpty()) { "Path must not be empty" }
-        if (deepEquals(getAt(values, path), value)) return values
+        require(segments.isNotEmpty()) { "Path '$path' does not resolve to any field segment" }
+        // Reuse the parsed segments for the equality short-circuit instead of re-parsing the path
+        // and walking the tree a second time.
+        if (deepEquals(getAtSegments(values, segments), value)) return values
         return setRecursive(values, segments, 0, value) as Map<String, Any?>
     }
 
@@ -107,6 +130,24 @@ object MapValuesUpdater : ValuesUpdater<Map<String, Any?>> {
         }
     }
 
+    /**
+     * Maximum number of slots auto-vivified when writing past the end of a list. Bounds the
+     * allocation a stray large index (e.g. `"tags[2000000000]"` from a malformed path) could
+     * otherwise trigger. An index beyond this is treated as a no-op, like a non-numeric segment.
+     */
+    private const val MAX_AUTO_GROW = 10_000
+
+    /** Parse a list-index segment, rejecting non-integers, negatives, and out-of-range growth. */
+    private fun listIndexOrNull(segment: String, currentSize: Int): Int? {
+        val i = segment.toIntOrNull() ?: return null
+        if (i < 0) return null
+        if (i > currentSize + MAX_AUTO_GROW) return null
+        return i
+    }
+
+    private fun Any?.isEmptyContainer(): Boolean =
+        (this is Map<*, *> && this.isEmpty()) || (this is List<*> && this.isEmpty())
+
     private fun setRecursive(container: Any?, segments: List<String>, index: Int, value: Any?): Any? {
         val segment = segments[index]
         val isLast = index == segments.lastIndex
@@ -116,24 +157,25 @@ object MapValuesUpdater : ValuesUpdater<Map<String, Any?>> {
                 is Map<*, *> -> {
                     val m = (container as Map<String, Any?>).toMutableMap()
                     if (value == null) m.remove(segment) else m[segment] = value
-                    m.toMap()
+                    m
                 }
                 is List<*> -> {
-                    val i = segment.toIntOrNull() ?: return container
+                    // Reject negative / oversized indices as a no-op (read/write symmetry with getAt).
+                    val i = listIndexOrNull(segment, container.size) ?: return container
                     val l = container.toMutableList() as MutableList<Any?>
                     while (l.size <= i) l.add(null)
                     l[i] = value
-                    l.toList()
+                    l
                 }
                 else -> {
                     // create a new container
-                    val nextIsInt = false  // last segment, no "next"
                     if (segment.toIntOrNull() != null && container == null) {
                         // top-level integer path against null container — interpret as list-of-one
-                        val l = ArrayList<Any?>(segment.toInt() + 1)
-                        repeat(segment.toInt()) { l.add(null) }
+                        val i = listIndexOrNull(segment, 0) ?: return mapOf(segment to value)
+                        val l = ArrayList<Any?>(i + 1)
+                        repeat(i) { l.add(null) }
                         l.add(value)
-                        l.toList()
+                        l
                     } else {
                         mapOf(segment to value)
                     }
@@ -153,21 +195,25 @@ object MapValuesUpdater : ValuesUpdater<Map<String, Any?>> {
                 } else {
                     setRecursive(existing, segments, index + 1, value)
                 }
-                m[segment] = newChild
-                m.toMap()
+                // Prune a child that collapsed to an empty container as a result of clearing
+                // (value == null), so set-then-clear of a nested leaf restores the original shape
+                // and `dirty` re-baselines correctly.
+                if (value == null && newChild.isEmptyContainer()) m.remove(segment) else m[segment] = newChild
+                m
             }
             is List<*> -> {
-                val i = segment.toIntOrNull() ?: return container
+                val i = listIndexOrNull(segment, container.size) ?: return container
                 val l = container.toMutableList() as MutableList<Any?>
                 while (l.size <= i) l.add(null)
                 val existing = l[i]
-                l[i] = if (existing == null) {
+                val newChild = if (existing == null) {
                     if (nextSegmentIsInt) setRecursive(emptyList<Any?>(), segments, index + 1, value)
                     else setRecursive(emptyMap<String, Any?>(), segments, index + 1, value)
                 } else {
                     setRecursive(existing, segments, index + 1, value)
                 }
-                l.toList()
+                l[i] = if (value == null && newChild.isEmptyContainer()) null else newChild
+                l
             }
             else -> {
                 if (nextSegmentIsInt) {
@@ -181,11 +227,13 @@ object MapValuesUpdater : ValuesUpdater<Map<String, Any?>> {
 }
 
 /**
- * Fallback updater that supports only flat (single-segment) top-level paths and stores values
- * directly inside the [V] object as if it were a `Map<String, Any?>` lookalike.
+ * Fail-fast placeholder updater. **Every** read and write throws [UnsupportedOperationException] —
+ * it does not actually store or resolve any field. [FormikController] no longer selects it as a
+ * default (a non-`Map` values type with no `valuesUpdater` now fails at construction with an
+ * actionable message). It remains only so an explicit, intentional "no updater" can be expressed.
  *
- * Useful for the rare case where a consumer wants to use a single-string [V] (e.g. for a one-field
- * form). For anything else, use [MapValuesUpdater] or write a custom one.
+ * For real typed (`data class`) values, supply a hand-written [ValuesUpdater] or the KSP-generated
+ * `<Name>Updater`; for `Map<String, Any?>` values use [MapValuesUpdater].
  */
 class FlatTopLevelUpdater<V> : ValuesUpdater<V> {
     override fun getAt(values: V, path: String): Any? = throw UnsupportedOperationException(
