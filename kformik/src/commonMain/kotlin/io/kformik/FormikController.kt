@@ -8,10 +8,14 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -188,11 +192,71 @@ class FormikController<V>(
         if (validate) runAllValidationsAndCommit(newValues as V, gen)
     }
 
+    /**
+     * Debounced change-validation pipeline. Non-null only when [FormikConfig.validateDebounceMs]
+     * is a positive value. Carries (values, generation) pairs — the generation lets
+     * [runAllValidationsAndCommit] drop stale results when newer mutations have superseded the
+     * pair we just debounced.
+     *
+     * `replay = 1` matters: change requests can be emitted (via [setFieldValue] etc.) before the
+     * collector coroutine launched in [init] has had a chance to subscribe. With `replay = 0`
+     * those pre-subscription emissions would be lost; `replay = 1` means a late subscriber sees
+     * the most recent intent, which is exactly what debounce semantics want anyway.
+     *
+     * `DROP_OLDEST` on overflow is also safe here: every emission is a complete (values, gen)
+     * pair, so dropping a stale one in favor of a newer one is the correct debounce behavior.
+     */
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    private val _changeValidationRequests: MutableSharedFlow<Pair<V, Long>>? =
+        config.validateDebounceMs?.takeIf { it > 0L }?.let {
+            MutableSharedFlow(
+                replay = 1,
+                extraBufferCapacity = 63,
+                onBufferOverflow = BufferOverflow.DROP_OLDEST,
+            )
+        }
+
+    /**
+     * Job for the debounced-validation collector. Tracked explicitly so [close] can cancel it
+     * even when the user supplied their own [CoroutineScope] (in which case [close] does NOT
+     * cancel the scope itself — but the Job we created is still our lifecycle to clean up).
+     */
+    private var _debounceCollectorJob: Job? = null
+
     init {
         if (config.validateOnMount) {
             scope.launch {
                 revalidateCurrent()
             }
+        }
+        // Wire the debounced collector exactly once, only when configured.
+        @OptIn(kotlinx.coroutines.FlowPreview::class)
+        if (_changeValidationRequests != null) {
+            val debounceMs = config.validateDebounceMs!!
+            _debounceCollectorJob = scope.launch {
+                _changeValidationRequests
+                    .debounce(debounceMs)
+                    .collect { (values, gen) -> runAllValidationsAndCommit(values, gen) }
+            }
+        }
+    }
+
+    /**
+     * Route a change-triggered validation request. If the controller is configured with
+     * [FormikConfig.validateDebounceMs], the request is emitted to the debounced pipeline and
+     * returns immediately; otherwise the validator runs synchronously (current behavior).
+     * Generation tracking inside [runAllValidationsAndCommit] guarantees stale results from the
+     * debounced path are dropped if newer mutations have already superseded them.
+     */
+    private suspend fun scheduleChangeValidation(values: V, gen: Long) {
+        val pipeline = _changeValidationRequests
+        if (pipeline != null) {
+            // tryEmit succeeds without suspension because the buffer is configured with
+            // extraBufferCapacity + DROP_OLDEST — overflow drops the previous (now-stale)
+            // request, which is the correct semantics for a debounce.
+            pipeline.tryEmit(values to gen)
+        } else {
+            runAllValidationsAndCommit(values, gen)
         }
     }
 
@@ -367,7 +431,7 @@ class FormikController<V>(
             _state.update { it.copy(values = next) }
             next
         }
-        if (willValidate) runAllValidationsAndCommit(newValues, gen)
+        if (willValidate) scheduleChangeValidation(newValues, gen)
     }
 
     override suspend fun setFieldValue(name: String, updater: (Any?) -> Any?, shouldValidate: Boolean?) {
@@ -382,7 +446,7 @@ class FormikController<V>(
             _state.update { it.copy(values = next) }
             next
         }
-        if (willValidate) runAllValidationsAndCommit(newValues, gen)
+        if (willValidate) scheduleChangeValidation(newValues, gen)
     }
 
     override suspend fun setValues(values: V, shouldValidate: Boolean?) {
@@ -392,7 +456,7 @@ class FormikController<V>(
             _state.update { it.copy(values = values) }
             ++validationGeneration
         }
-        if (willValidate) runAllValidationsAndCommit(values, gen)
+        if (willValidate) scheduleChangeValidation(values, gen)
     }
 
     override suspend fun setValues(updater: (V) -> V, shouldValidate: Boolean?) {
@@ -405,7 +469,7 @@ class FormikController<V>(
             _state.update { it.copy(values = next) }
             next
         }
-        if (willValidate) runAllValidationsAndCommit(resolved, gen)
+        if (willValidate) scheduleChangeValidation(resolved, gen)
     }
 
     override suspend fun setFieldTouched(name: String, isTouched: Boolean, shouldValidate: Boolean?) {
@@ -775,6 +839,9 @@ class FormikController<V>(
      * mutations.
      */
     fun close() {
+        // Always cancel any controller-owned Jobs (debounced collector etc.) so they don't
+        // outlive the controller even when the user retains the underlying scope.
+        _debounceCollectorJob?.cancel()
         if (config.coroutineScope == null) {
             scope.cancel()
         }

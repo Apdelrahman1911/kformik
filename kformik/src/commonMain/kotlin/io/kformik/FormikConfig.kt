@@ -40,6 +40,22 @@ data class FormikConfig<V>(
     /** Whether to validate on construction. Default `false`. */
     val validateOnMount: Boolean = false,
 
+    /**
+     * Optional debounce window (in milliseconds) applied to change-triggered validation. When set,
+     * rapid mutations via [FormikController.setFieldValue] / [FormikController.setValues] coalesce
+     * into a single validation run after the debounce window — useful for forms whose [validate]
+     * makes expensive checks (network lookups, regex scans over long input, etc.).
+     *
+     * The debounce applies **only** to validation triggered by [validateOnChange]. Validation
+     * triggered by blur ([validateOnBlur]), explicit [FormikController.validateForm] /
+     * [FormikController.validateField] calls, or submit always runs immediately — those are
+     * explicit triggers where users expect instant feedback.
+     *
+     * `null` (default) preserves current behavior: every change validates synchronously.
+     * `0` is treated as `null`. Negative values are coerced to `null`.
+     */
+    val validateDebounceMs: Long? = null,
+
     /** Whether [FormikController.reinitialize] should auto-reset and re-snapshot. Default `false`. */
     val enableReinitialize: Boolean = false,
 

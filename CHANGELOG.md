@@ -2,6 +2,17 @@
 
 All notable changes are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`FormikConfig.validateDebounceMs: Long? = null`** — optional debounce window applied to change-triggered validation. When set, rapid mutations via `setFieldValue` / `setValues` coalesce into a single validation run after the debounce window, so a `validate` callback that makes expensive checks (network lookups, heavy regex, etc.) isn't invoked on every keystroke. The debounce applies only to validation triggered by `validateOnChange`; blur (`validateOnBlur`), explicit `validateForm()` / `validateField()`, and submit always validate immediately. `null` (default) preserves current behavior — every change validates synchronously, no regression for callers who don't set the field. `0` and negative values are coerced to `null`.
+- 11 tests in `ValidateDebounceTest` covering: rapid-burst coalescing, latest-values-win debounce semantics, separate burst behavior, blur / submit / `validateForm()` bypass guarantees, `validateOnChange=false` interaction, and zero/negative coercion.
+
+### Binary compatibility
+
+- `FormikConfig`'s synthetic constructor signature gained one parameter (`validateDebounceMs: Long?`) inserted alongside the other `validate*` options. Source-compatible for Kotlin callers using named-argument construction (the dominant pattern). Component functions (`component12`+) shift — only affects code that positionally destructures `FormikConfig`, which is rare. `api/jvm/kformik.api` and `api/android/kformik.api` baselines updated.
+
 ## [1.6.0] — 2026-05-30
 
 A correctness-and-robustness release. The headline is a hardened concurrency/state model: the
