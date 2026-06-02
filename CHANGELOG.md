@@ -15,6 +15,10 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 - `FormikConfig`'s synthetic constructor signature gained two parameters (`validateDebounceMs: Long?`, `validateAsync: (suspend (V) -> FormikErrors)?`) alongside the other `validate*` options. Source-compatible for Kotlin callers using named-argument construction (the dominant pattern). Component functions (`component12`+) shift — only affects code that positionally destructures `FormikConfig`, which is rare. `api/jvm/kformik.api` and `api/android/kformik.api` baselines updated.
 
+### Build & CI
+
+- **Automated release workflow** (`.github/workflows/release.yml`). Pushing a `v*` tag now runs the full release pipeline on a `macos-14` runner: pre-publish verification (tests + apiCheck) → signed `publishToMavenLocal` sanity → `publishToSonatype` (staging upload) → `bulk/close` + state poll → `bulk/promote` → `gh release create` with the matching CHANGELOG section as body. Failures drop the staging repo via `bulk/drop`. The irreversible promote step is gated behind a configurable `release` GitHub environment (recommended: add yourself as a required reviewer). `workflow_dispatch` with `dry_run = true` exercises the pipeline without publishing. Setup, prerequisites, and dry-run docs in `docs/RELEASE_PROCESS.md`.
+
 ## [1.6.0] — 2026-05-30
 
 A correctness-and-robustness release. The headline is a hardened concurrency/state model: the

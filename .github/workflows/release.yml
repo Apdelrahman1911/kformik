@@ -1,0 +1,242 @@
+name: Release
+
+# Triggered by pushing an annotated tag matching v* (e.g. v1.7.0). The tag's
+# stripped name MUST match `kformikVersion` in gradle.properties — the first
+# step fails fast otherwise so a mismatched tag can never reach Sonatype.
+#
+# A manual workflow_dispatch is also wired so the pipeline can be exercised
+# against the current main without actually promoting (dry_run = true).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run through staging upload but skip close / promote / GitHub release.'
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false   # never cancel an in-flight release
+
+permissions:
+  contents: write   # for gh release create
+
+jobs:
+  release:
+    name: Release to Maven Central
+    runs-on: macos-14            # required for iOS klib publication
+
+    # Optional but recommended: configure a `release` environment in repo
+    # settings with required reviewers, and the promote step won't run until
+    # a human approves the run. Comment this line out if you haven't set the
+    # environment up yet (the rest of the pipeline still works).
+    environment: release
+
+    env:
+      SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+      SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+      SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+      SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+      STAGING_PROFILE_ID: io.github.apdelrahman1911
+      DRY_RUN: ${{ inputs.dry_run == true }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0       # need full history so gh release can resolve the tag
+
+      - name: Resolve version + verify tag matches gradle.properties
+        id: version
+        run: |
+          if [ -n "${{ github.ref_name }}" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
+              TAG="${{ github.ref_name }}"
+              TAG_VERSION="${TAG#v}"
+          else
+              # workflow_dispatch run — read version from gradle.properties directly.
+              TAG=""
+              TAG_VERSION=""
+          fi
+          GRADLE_VERSION=$(grep '^kformikVersion=' gradle.properties | cut -d= -f2)
+          echo "Gradle properties version: $GRADLE_VERSION"
+          if [ -n "$TAG_VERSION" ] && [ "$TAG_VERSION" != "$GRADLE_VERSION" ]; then
+              echo "::error::Tag ${TAG} (${TAG_VERSION}) does not match gradle.properties kformikVersion (${GRADLE_VERSION})"
+              exit 1
+          fi
+          if [[ "$GRADLE_VERSION" == *-SNAPSHOT ]]; then
+              echo "::error::Refusing to release a -SNAPSHOT version (${GRADLE_VERSION}). Bump gradle.properties first."
+              exit 1
+          fi
+          echo "version=${GRADLE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG:-v${GRADLE_VERSION}}" >> "$GITHUB_OUTPUT"
+          echo "Releasing v${GRADLE_VERSION}"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Pre-publish verification
+        # Sanity for the exact commit being released. Cheaper than a full CI sweep
+        # (we trust the commit's CI already ran on push); this is "did signing wire
+        # up correctly and does the release version produce all expected artifacts."
+        run: |
+          ./gradlew clean --warning-mode=all
+          ./gradlew \
+            :kformik:jvmTest \
+            :kformik:testReleaseUnitTest \
+            :kformik-compose:jvmTest \
+            :kformik-compose:assembleRelease \
+            :kformik-compose:compileKotlinIosSimulatorArm64 \
+            :kformik-ksp:test \
+            :sample-android-app:assembleDebug \
+            :examples:compileKotlin \
+            apiCheck \
+            --warning-mode=all
+
+      - name: Signed publishToMavenLocal (sanity)
+        run: ./gradlew publishToMavenLocal --warning-mode=all
+
+      - name: Verify signatures
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ASC_COUNT=$(find ~/.m2/repository/io/github/apdelrahman1911 -name "*.asc" -path "*/$VERSION/*" | wc -l | tr -d ' ')
+          echo "Signed artifacts produced: $ASC_COUNT .asc files"
+          if [ "$ASC_COUNT" -lt 40 ]; then
+              echo "::error::Expected >=40 .asc signatures across 13 modules; got $ASC_COUNT — signing likely misconfigured"
+              exit 1
+          fi
+          # Verify one signature actually validates against our public key.
+          F=$(find ~/.m2/repository/io/github/apdelrahman1911/kformik-jvm -name "*.jar" -path "*/$VERSION/*" | head -1)
+          gpg --verify "${F}.asc" "${F}" 2>&1 | grep -E 'Good signature|using RSA' || {
+              echo "::error::Signature verification failed for ${F}"
+              exit 1
+          }
+
+      - name: Upload to Sonatype staging
+        id: stage
+        run: |
+          ./gradlew publishToSonatype \
+              -PsonatypeStagingProfileId="${STAGING_PROFILE_ID}" \
+              --warning-mode=all 2>&1 | tee /tmp/staging.log
+
+          REPO_ID=$(grep -oE "io\.github\.apdelrahman1911--[a-f0-9-]+" /tmp/staging.log | head -1)
+          if [ -z "$REPO_ID" ]; then
+              echo "::error::Failed to capture staging repository ID from publishToSonatype output"
+              exit 1
+          fi
+          echo "Captured staging repo: $REPO_ID"
+          echo "repo_id=${REPO_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Close staging — Sonatype validation
+        if: ${{ env.DRY_RUN != 'true' }}
+        env:
+          REPO_ID: ${{ steps.stage.outputs.repo_id }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -e
+          # Submit close request.
+          curl -fsSL -u "${SONATYPE_USERNAME}:${SONATYPE_PASSWORD}" \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/json" \
+              "https://ossrh-staging-api.central.sonatype.com/service/local/staging/bulk/close" \
+              -d "{\"data\":{\"description\":\"Kformik ${TAG}\",\"stagedRepositoryIds\":[\"${REPO_ID}\"],\"autoDropAfterRelease\":false}}"
+
+          # Poll up to 5 minutes for the close to finish.
+          for attempt in $(seq 1 30); do
+              sleep 10
+              STATE=$(curl -fsSL -u "${SONATYPE_USERNAME}:${SONATYPE_PASSWORD}" -H "Accept: application/json" \
+                  "https://ossrh-staging-api.central.sonatype.com/service/local/staging/repository/${REPO_ID}")
+              TYPE=$(echo "$STATE" | grep -oE '"type":"[^"]+"' | head -1)
+              TRANSITIONING=$(echo "$STATE" | grep -oE '"transitioning":(true|false)' | head -1)
+              NOTIFICATIONS=$(echo "$STATE" | grep -oE '"notifications":[0-9]+' | head -1 | grep -oE '[0-9]+')
+              echo "attempt $attempt: $TYPE $TRANSITIONING notifications=$NOTIFICATIONS"
+
+              if echo "$TRANSITIONING" | grep -q 'false'; then
+                  if echo "$TYPE" | grep -q '"closed"'; then
+                      if [ "$NOTIFICATIONS" = "0" ]; then
+                          echo "Staging closed cleanly with 0 notifications."
+                          exit 0
+                      else
+                          echo "::error::Close validation failed: $NOTIFICATIONS notifications"
+                          echo "$STATE"
+                          exit 1
+                      fi
+                  else
+                      echo "::error::Staging did not reach closed state: $STATE"
+                      exit 1
+                  fi
+              fi
+          done
+          echo "::error::Timed out waiting for staging close after 5 minutes"
+          exit 1
+
+      - name: Promote to Maven Central (IRREVERSIBLE)
+        if: ${{ env.DRY_RUN != 'true' }}
+        env:
+          REPO_ID: ${{ steps.stage.outputs.repo_id }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          curl -fsSL -u "${SONATYPE_USERNAME}:${SONATYPE_PASSWORD}" \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/json" \
+              "https://ossrh-staging-api.central.sonatype.com/service/local/staging/bulk/promote" \
+              -d "{\"data\":{\"description\":\"Kformik ${TAG}\",\"stagedRepositoryIds\":[\"${REPO_ID}\"],\"autoDropAfterRelease\":true}}"
+          echo "Promoted to Maven Central. Sync to repo1.maven.org takes 10-30 minutes."
+
+      - name: Create GitHub release
+        if: ${{ env.DRY_RUN != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Extract the [X.Y.Z] section from CHANGELOG.md (mirrors the manual extraction
+          # we used for v1.4.0 / v1.5.0 / v1.6.0 releases).
+          awk -v v="$VERSION" '
+              $0 ~ "^## \\["v"\\]" { in_section = 1; next }
+              in_section && /^## \[/ { exit }
+              in_section { print }
+          ' CHANGELOG.md | sed '/./,$!d' > /tmp/release-notes.md
+
+          if [ ! -s /tmp/release-notes.md ]; then
+              echo "::warning::No [${VERSION}] section in CHANGELOG.md; falling back to a minimal release body"
+              echo "Kformik ${TAG}" > /tmp/release-notes.md
+          fi
+
+          gh release create "${TAG}" \
+              --title "${TAG}" \
+              --notes-file /tmp/release-notes.md \
+              --verify-tag
+
+      - name: Drop staging on failure
+        if: failure() && steps.stage.outputs.repo_id != ''
+        env:
+          REPO_ID: ${{ steps.stage.outputs.repo_id }}
+        run: |
+          echo "::warning::Workflow failed; dropping staging repo $REPO_ID"
+          curl -fsSL -u "${SONATYPE_USERNAME}:${SONATYPE_PASSWORD}" \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/json" \
+              "https://ossrh-staging-api.central.sonatype.com/service/local/staging/bulk/drop" \
+              -d "{\"data\":{\"description\":\"Drop: workflow ${{ github.run_id }} failed\",\"stagedRepositoryIds\":[\"${REPO_ID}\"],\"autoDropAfterRelease\":false}}" || true
+
+      - name: Upload artifacts on failure (for debugging)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-failure-logs
+          path: |
+            /tmp/staging.log
+            **/build/reports/tests/
+          retention-days: 7

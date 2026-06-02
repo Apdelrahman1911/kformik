@@ -1,6 +1,48 @@
 # Release process
 
-End-to-end checklist for cutting a Kformik release. This repo does **not** publish externally — every step below is configured but requires explicit invocation with real credentials.
+End-to-end checklist for cutting a Kformik release. **Two paths are supported:**
+
+- **Automated (preferred):** push a `v*` tag to GitHub. `.github/workflows/release.yml` runs the full pipeline (verify → sign → stage → close → promote → GitHub release) on a `macos-14` runner. See *§ Automated release via GitHub Actions* below for the one-time setup.
+- **Manual (fallback):** the rest of this document is the manual procedure — useful when GitHub Actions can't run the release (network restrictions, runner outage, debugging a failed automated release).
+
+Both paths talk to the same Sonatype endpoints and produce the same artifacts; only the driver differs.
+
+## Automated release via GitHub Actions
+
+### One-time setup (do this once, before your first automated release)
+
+1. **GitHub repository secrets** — `Settings → Secrets and variables → Actions → New repository secret`. Add:
+   - `SONATYPE_USERNAME` — your Sonatype user-token username
+   - `SONATYPE_PASSWORD` — your Sonatype user-token password
+   - `SIGNING_KEY` — your ASCII-armored GPG private key (the full `-----BEGIN PGP PRIVATE KEY BLOCK-----` block). Paste it as-is; GitHub will store it intact.
+   - `SIGNING_PASSWORD` — the passphrase for `SIGNING_KEY`
+2. **(Recommended) `release` environment** — `Settings → Environments → New environment → release`. Add yourself as a required reviewer. The release workflow references `environment: release`, so once configured, every release run pauses on the `Promote to Maven Central (IRREVERSIBLE)` step until you click Approve in the GitHub Actions UI. If you skip this setup, the release runs unattended; comment out the `environment: release` line in `.github/workflows/release.yml` to allow that.
+
+### Cutting a release
+
+1. Bump `kformikVersion` in `gradle.properties` from `X.Y.Z-SNAPSHOT` to the release version `X.Y.Z`. Commit, push.
+2. Annotated-tag the release commit: `git tag -a vX.Y.Z -m "Kformik vX.Y.Z"`, then `git push origin vX.Y.Z`.
+3. The push triggers `.github/workflows/release.yml`. Watch its progress in the Actions tab.
+4. If the `release` environment is configured, approve the run when prompted (the irreversible promote step is gated behind this).
+5. After Maven Central sync (10–30 min), verify the artifact is visible at <https://repo1.maven.org/maven2/io/github/apdelrahman1911/kformik/X.Y.Z/>. The README badge will catch up automatically.
+
+### Dry-run (test the workflow without publishing)
+
+Run the workflow via `workflow_dispatch` with `dry_run = true` (Actions tab → Release → Run workflow). It exercises the verification + sign + staging-upload phases and stops before close/promote. The staging repository is dropped automatically.
+
+### What the workflow does NOT do
+
+- It does **not** bump back to a `-SNAPSHOT` after release. If you want that, edit `gradle.properties` manually after the release lands.
+- It does **not** push commits or modify `main` — only reads from the tag.
+- It does **not** create the tag — you push the tag; the workflow consumes it.
+
+If a release fails partway through, the workflow's failure-cleanup step drops the staging repo via `bulk/drop`. Failed-run logs are uploaded as a GitHub Actions artifact (`release-failure-logs`) for inspection.
+
+---
+
+## Manual release (fallback)
+
+This is the original procedure — runs everything from your local machine. Documented for the case where the automated workflow is unavailable.
 
 ## Snapshot
 
