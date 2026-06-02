@@ -163,26 +163,27 @@ public final class io/kformik/FormikActions$DefaultImpls {
 }
 
 public final class io/kformik/FormikConfig {
-	public fun <init> (Ljava/lang/Object;Lio/kformik/FormikErrors;Lio/kformik/FormikTouched;Ljava/lang/Object;Lkotlin/jvm/functions/Function2;Lio/kformik/SchemaValidator;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZZZLjava/lang/Long;ZLkotlinx/coroutines/CoroutineScope;Lio/kformik/ValuesUpdater;Lkotlin/jvm/functions/Function1;)V
-	public synthetic fun <init> (Ljava/lang/Object;Lio/kformik/FormikErrors;Lio/kformik/FormikTouched;Ljava/lang/Object;Lkotlin/jvm/functions/Function2;Lio/kformik/SchemaValidator;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZZZLjava/lang/Long;ZLkotlinx/coroutines/CoroutineScope;Lio/kformik/ValuesUpdater;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/Object;Lio/kformik/FormikErrors;Lio/kformik/FormikTouched;Ljava/lang/Object;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function2;Lio/kformik/SchemaValidator;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZZZLjava/lang/Long;ZLkotlinx/coroutines/CoroutineScope;Lio/kformik/ValuesUpdater;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Ljava/lang/Object;Lio/kformik/FormikErrors;Lio/kformik/FormikTouched;Ljava/lang/Object;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function2;Lio/kformik/SchemaValidator;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZZZLjava/lang/Long;ZLkotlinx/coroutines/CoroutineScope;Lio/kformik/ValuesUpdater;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/Object;
 	public final fun component10 ()Z
 	public final fun component11 ()Z
-	public final fun component12 ()Ljava/lang/Long;
-	public final fun component13 ()Z
-	public final fun component14 ()Lkotlinx/coroutines/CoroutineScope;
-	public final fun component15 ()Lio/kformik/ValuesUpdater;
-	public final fun component16 ()Lkotlin/jvm/functions/Function1;
+	public final fun component12 ()Z
+	public final fun component13 ()Ljava/lang/Long;
+	public final fun component14 ()Z
+	public final fun component15 ()Lkotlinx/coroutines/CoroutineScope;
+	public final fun component16 ()Lio/kformik/ValuesUpdater;
+	public final fun component17 ()Lkotlin/jvm/functions/Function1;
 	public final fun component2 ()Lio/kformik/FormikErrors;
 	public final fun component3 ()Lio/kformik/FormikTouched;
 	public final fun component4 ()Ljava/lang/Object;
 	public final fun component5 ()Lkotlin/jvm/functions/Function2;
-	public final fun component6 ()Lio/kformik/SchemaValidator;
-	public final fun component7 ()Lkotlin/jvm/functions/Function3;
+	public final fun component6 ()Lkotlin/jvm/functions/Function2;
+	public final fun component7 ()Lio/kformik/SchemaValidator;
 	public final fun component8 ()Lkotlin/jvm/functions/Function3;
-	public final fun component9 ()Z
-	public final fun copy (Ljava/lang/Object;Lio/kformik/FormikErrors;Lio/kformik/FormikTouched;Ljava/lang/Object;Lkotlin/jvm/functions/Function2;Lio/kformik/SchemaValidator;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZZZLjava/lang/Long;ZLkotlinx/coroutines/CoroutineScope;Lio/kformik/ValuesUpdater;Lkotlin/jvm/functions/Function1;)Lio/kformik/FormikConfig;
-	public static synthetic fun copy$default (Lio/kformik/FormikConfig;Ljava/lang/Object;Lio/kformik/FormikErrors;Lio/kformik/FormikTouched;Ljava/lang/Object;Lkotlin/jvm/functions/Function2;Lio/kformik/SchemaValidator;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZZZLjava/lang/Long;ZLkotlinx/coroutines/CoroutineScope;Lio/kformik/ValuesUpdater;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lio/kformik/FormikConfig;
+	public final fun component9 ()Lkotlin/jvm/functions/Function3;
+	public final fun copy (Ljava/lang/Object;Lio/kformik/FormikErrors;Lio/kformik/FormikTouched;Ljava/lang/Object;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function2;Lio/kformik/SchemaValidator;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZZZLjava/lang/Long;ZLkotlinx/coroutines/CoroutineScope;Lio/kformik/ValuesUpdater;Lkotlin/jvm/functions/Function1;)Lio/kformik/FormikConfig;
+	public static synthetic fun copy$default (Lio/kformik/FormikConfig;Ljava/lang/Object;Lio/kformik/FormikErrors;Lio/kformik/FormikTouched;Ljava/lang/Object;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function2;Lio/kformik/SchemaValidator;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZZZLjava/lang/Long;ZLkotlinx/coroutines/CoroutineScope;Lio/kformik/ValuesUpdater;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lio/kformik/FormikConfig;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCoroutineScope ()Lkotlinx/coroutines/CoroutineScope;
 	public final fun getEnableReinitialize ()Z
@@ -195,6 +196,7 @@ public final class io/kformik/FormikConfig {
 	public final fun getOnSubmit ()Lkotlin/jvm/functions/Function3;
 	public final fun getSchemaValidator ()Lio/kformik/SchemaValidator;
 	public final fun getValidate ()Lkotlin/jvm/functions/Function2;
+	public final fun getValidateAsync ()Lkotlin/jvm/functions/Function2;
 	public final fun getValidateDebounceMs ()Ljava/lang/Long;
 	public final fun getValidateOnBlur ()Z
 	public final fun getValidateOnChange ()Z

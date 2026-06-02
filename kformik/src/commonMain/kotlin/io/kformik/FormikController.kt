@@ -580,7 +580,16 @@ class FormikController<V>(
         val topLevelErrors = config.validate?.invoke(values) ?: FormikErrors.Empty
 
         // merge order: field → schema → top-level (later writers win, matching Formik's deepmerge.all order)
-        return fieldErrors.overlay(schemaErrors).overlay(topLevelErrors)
+        val syncErrors = fieldErrors.overlay(schemaErrors).overlay(topLevelErrors)
+
+        // Circuit breaker: skip the optional async / expensive validator entirely if any cheap
+        // rule already invalidated the form. This is the documented [FormikConfig.validateAsync]
+        // contract — see its KDoc for the rationale.
+        if (syncErrors.byPath.isNotEmpty()) return syncErrors
+
+        val asyncErrors = config.validateAsync?.invoke(values) ?: FormikErrors.Empty
+        // Async path overlays onto the (empty) sync layer; keeps the merge order consistent.
+        return syncErrors.overlay(asyncErrors)
     }
 
     private suspend fun runFieldLevelValidations(values: V): FormikErrors {

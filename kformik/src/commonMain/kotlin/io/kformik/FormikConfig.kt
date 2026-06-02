@@ -22,6 +22,27 @@ data class FormikConfig<V>(
     /** Top-level validator. Returns the full error map (or empty if valid). */
     val validate: (suspend (V) -> FormikErrors)? = null,
 
+    /**
+     * Optional **async / expensive** validator. Runs **only when** the sync validation layer
+     * (`validate` + [schemaValidator] + field-level validators) produced zero errors — a circuit
+     * breaker so cheap rules can short-circuit network lookups, heavy regex, or any other work
+     * that's wasted if the form is already invalid.
+     *
+     * Semantics:
+     *  - All cheap rules run first on every validation pass.
+     *  - If any cheap rule produced even one error, [validateAsync] is **not invoked**.
+     *  - If the cheap layer is clean, [validateAsync] runs and its errors are committed.
+     *  - Errors from [validateAsync] are surfaced in [FormikState.errors] like any other error.
+     *  - The pass remains a single "validation event": `isValidating` is `true` from the start
+     *    of the sync layer until [validateAsync] (if reached) completes.
+     *
+     * Pair this with [validateDebounceMs] for the canonical "debounce on type + skip network if
+     * the cheap regex already failed" workflow.
+     *
+     * `null` (default) leaves current behavior unchanged.
+     */
+    val validateAsync: (suspend (V) -> FormikErrors)? = null,
+
     /** Schema-style validator. Composed with [validate] and per-field validators. */
     val schemaValidator: SchemaValidator<V>? = null,
 
