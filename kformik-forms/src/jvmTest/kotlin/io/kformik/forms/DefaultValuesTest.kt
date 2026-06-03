@@ -86,4 +86,32 @@ class DefaultValuesTest {
         assertNull(initial["explicitNull"], "explicit null overrides type default — Select 'no selection' UX")
         assertEquals("eg", initial["explicitValue"], "explicit value overrides type default")
     }
+
+    /**
+     * v1.9.0: nested-path field names build a properly-nested initial values map (via
+     * MapValuesUpdater.setAt), not a flat map with literal dotted keys. The controller's
+     * value resolution uses MapValuesUpdater to walk paths, so a flat key like `"user.email"`
+     * would never resolve — `valueAt("user.email")` would return null even though
+     * buildInitialValuesFrom thought it had seeded the field.
+     */
+    @Test fun buildInitialValues_nestedPaths_produceNestedStructure() {
+        val fields = mapOf(
+            "user.name" to Field(type = FieldType.Text, initialValue = "Aisha"),
+            "user.email" to Field(type = FieldType.Email, initialValue = "a@example.com"),
+            "items[0]" to Field(type = FieldType.Text, initialValue = "first"),
+            "topLevel" to Field(type = FieldType.Text, initialValue = "yes"),
+        )
+        val initial = buildInitialValuesFrom(fields)
+        // Top-level remains flat.
+        assertEquals("yes", initial["topLevel"])
+        // Nested: result["user"] is itself a Map with the two sub-fields.
+        val user = initial["user"]
+        assertEquals(
+            mapOf("name" to "Aisha", "email" to "a@example.com"),
+            user,
+            "nested-path keys must produce nested maps, not literal dotted keys",
+        )
+        // List index path: result["items"] is a List with element 0 set.
+        assertEquals(listOf("first"), initial["items"])
+    }
 }

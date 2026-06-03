@@ -1,6 +1,7 @@
 package io.kformik.forms
 
 import io.kformik.FormSchema
+import io.kformik.MapValuesUpdater
 import io.kformik.formSchema
 
 /**
@@ -53,8 +54,29 @@ internal fun buildSchemaFrom(fields: Map<String, Field>): FormSchema<Map<String,
  * documented "no selection" path for [FieldType.Select] / [FieldType.Radio]. Pre-1.9.0 the code
  * used `?:` and so couldn't distinguish "omitted" from "explicit null" — the documented null
  * escape hatch silently fell back to the first option's value.
+ *
+ * **Nested-path keys** (e.g. `"user.email"`, `"items[0]"`): routed through [MapValuesUpdater] so
+ * the resulting initial-values map is properly nested:
+ *
+ * ```kotlin
+ * mapOf(
+ *     "user.name" to Field(...),
+ *     "user.email" to Field(...),
+ * )
+ * // → { "user" → { "name" → "", "email" → "" } }   (v1.9.0+)
+ * // pre-1.9.0: { "user.name" → "", "user.email" → "" }  — literal flat keys, never resolved
+ * //                                                       by the controller's MapValuesUpdater
+ * ```
+ *
+ * Pre-1.9.0 the function used `.mapValues` which inserted the path string as a literal map key —
+ * so `KformikForm` with nested-path fields never resolved its own initial values, breaking the
+ * documented nested-path use case.
  */
-internal fun buildInitialValuesFrom(fields: Map<String, Field>): Map<String, Any?> =
-    fields.mapValues { (_, f) ->
-        if (f.initialValue === FieldDefaultValue) defaultValueFor(f.type) else f.initialValue
+internal fun buildInitialValuesFrom(fields: Map<String, Field>): Map<String, Any?> {
+    var result: Map<String, Any?> = emptyMap()
+    for ((path, f) in fields) {
+        val value = if (f.initialValue === FieldDefaultValue) defaultValueFor(f.type) else f.initialValue
+        result = MapValuesUpdater.setAt(result, path, value)
     }
+    return result
+}
