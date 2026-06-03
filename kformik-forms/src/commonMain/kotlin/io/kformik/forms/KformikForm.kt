@@ -64,6 +64,10 @@ import io.kformik.compose.rememberFormik
  * @param initialTouched optional pre-populated touched-flag map (same hydration use case).
  * @param initialStatus optional pre-populated form-level status (`Any?`). Free-form, mirrors
  *  Formik's `status` field.
+ * @param footerSlot optional `@Composable` slot rendered BETWEEN the fields and the
+ *  [submitButton]. Receives the [ComposeFormik] handle so the slot can read full form state
+ *  (`form.state`, `submitCount`, `errors.size`, `status`) and surface form-level (non-field-bound)
+ *  errors. Default empty: callers who don't need it get the v1.8.x layout unchanged.
  */
 @Composable
 public fun KformikForm(
@@ -94,6 +98,7 @@ public fun KformikForm(
     initialErrors: FormikErrors = FormikErrors.Empty,
     initialTouched: FormikTouched = FormikTouched.Empty,
     initialStatus: Any? = null,
+    footerSlot: @Composable (form: ComposeFormik<Map<String, Any?>>) -> Unit = {},
 ) {
     val schema = remember(fields) { buildSchemaFrom(fields) }
     val initialValues = remember(fields) { buildInitialValuesFrom(fields) }
@@ -139,6 +144,7 @@ public fun KformikForm(
             spacing = spacing,
             renderOverride = renderOverride,
         )
+        footerSlot(form)
         submitButton(form::submit, isValid, state.isSubmitting)
     }
 }
