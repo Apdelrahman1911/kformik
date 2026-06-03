@@ -1,5 +1,6 @@
 package io.kformik.forms
 
+import androidx.compose.runtime.Stable
 import io.kformik.FieldRulesBuilder
 
 /**
@@ -55,6 +56,7 @@ import io.kformik.FieldRulesBuilder
  *  `pattern(regex)`, `min(n)`, `max(n)`, `custom(name) { v, allValues -> … }`. Cross-field rules
  *  receive `allValues: Map<String, Any?>`.
  */
+@Stable
 public data class Field(
     public val type: FieldType,
     public val label: String? = null,
