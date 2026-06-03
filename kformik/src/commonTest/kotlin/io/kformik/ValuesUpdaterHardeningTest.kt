@@ -50,6 +50,20 @@ class ValuesUpdaterHardeningTest {
         assertFailsWith<IllegalArgumentException> { MapValuesUpdater.setAt(mapOf("a" to 1), ".", 2) }
     }
 
+    /**
+     * v1.9.0 regression: `getAt` rejects empty / segment-less paths symmetrically with `setAt`.
+     * Pre-1.9.0, `getAt("")` / `getAt(".")` / `getAt("[]")` walked zero segments and returned the
+     * entire values map verbatim — surprising for callers expecting a leaf value or null, and a
+     * minor information-leak path. setAt has always rejected the same inputs.
+     */
+    @Test
+    fun emptyPath_getAt_throwsSymmetric_withSetAt() {
+        val values = mapOf<String, Any?>("a" to 1, "b" to "two")
+        assertFailsWith<IllegalArgumentException> { MapValuesUpdater.getAt(values, "") }
+        assertFailsWith<IllegalArgumentException> { MapValuesUpdater.getAt(values, ".") }
+        assertFailsWith<IllegalArgumentException> { MapValuesUpdater.getAt(values, "[]") }
+    }
+
     @Test
     fun clearingNestedLeaf_prunesEmptyParent_soDirtyRebaselines() = runTest {
         val c = FormikController(

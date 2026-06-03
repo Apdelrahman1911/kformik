@@ -70,8 +70,15 @@ interface ValuesUpdater<V> {
 @Suppress("UNCHECKED_CAST")
 object MapValuesUpdater : ValuesUpdater<Map<String, Any?>> {
 
-    override fun getAt(values: Map<String, Any?>, path: String): Any? =
-        getAtSegments(values, PathParser.parse(path))
+    override fun getAt(values: Map<String, Any?>, path: String): Any? {
+        val segments = PathParser.parse(path)
+        // Symmetric with setAt: a path that resolves to no segments (e.g. `""`, `"."`, `"[]"`) is
+        // not a valid field reference. Pre-1.9.0, getAt walked zero segments and returned the
+        // entire values map verbatim — surprising and a minor information leak vs. setAt which
+        // already rejected with this same error.
+        require(segments.isNotEmpty()) { "Path '$path' does not resolve to any field segment" }
+        return getAtSegments(values, segments)
+    }
 
     private fun getAtSegments(values: Map<String, Any?>, segments: List<String>): Any? {
         var current: Any? = values
