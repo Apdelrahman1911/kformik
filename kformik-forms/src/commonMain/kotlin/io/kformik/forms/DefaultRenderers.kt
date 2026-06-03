@@ -34,7 +34,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -234,7 +237,13 @@ private fun CheckboxRenderer(
     // `Modifier.toggleable` on the Row makes the entire row (widget + label) a single click
     // target. The inner Checkbox passes `onCheckedChange = null` so the gesture isn't
     // double-dispatched. `role = Role.Checkbox` tells assistive tech the semantic shape.
-    Column {
+    //
+    // `Modifier.semantics(mergeDescendants = true)` on the outer Column collapses the toggle
+    // row + error/helper text into one accessibility node — so TalkBack / VoiceOver announce the
+    // error along with the field rather than as a detached sibling. The error Text also gets
+    // `liveRegion = Polite`, so a newly-appearing error is announced when it lands instead of
+    // only when the user navigates to it.
+    Column(modifier = Modifier.semantics(mergeDescendants = true) {}) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.toggleable(
@@ -255,7 +264,10 @@ private fun CheckboxRenderer(
             displayLabel(field)?.let { Text(it) }
         }
         when {
-            error != null -> Text(error)
+            error != null -> Text(
+                error,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
             field.helperText != null -> Text(field.helperText)
         }
     }
@@ -270,11 +282,10 @@ private fun SwitchRenderer(
     val binding by form.fieldState(name)
     val checked = binding.value as? Boolean ?: false
     val error = binding.displayError
-    // Same pattern as CheckboxRenderer: the full Row (label + Switch) is one click target via
-    // `Modifier.toggleable`. The pre-fix code only had Switch's own onCheckedChange, so the
-    // `SpaceBetween` gap between label and switch was a dead zone — only the thumb itself was
-    // interactive, surprising for both pointer and screen-reader users.
-    Column {
+    // Same a11y treatment as CheckboxRenderer: full Row toggleable, outer Column merges
+    // descendants so the error / helper text is read alongside the toggle, and the error Text
+    // is a polite live region so changes are announced.
+    Column(modifier = Modifier.semantics(mergeDescendants = true) {}) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -298,7 +309,10 @@ private fun SwitchRenderer(
             )
         }
         when {
-            error != null -> Text(error)
+            error != null -> Text(
+                error,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
             field.helperText != null -> Text(field.helperText)
         }
     }
@@ -367,6 +381,10 @@ private fun RadioRenderer(
     val binding by form.fieldState(name)
     val currentValue = binding.value
     val error = binding.displayError
+    // Each option row carries its own `Modifier.selectable` so options stay independently
+    // focusable for screen-reader navigation — we do NOT mergeDescendants on the outer Column
+    // (that would collapse all options into a single node). The error Text is still a polite
+    // live region so a newly-appearing validation error is announced when it lands.
     Column {
         displayLabel(field)?.let { Text(it) }
         options.forEach { option ->
@@ -378,6 +396,7 @@ private fun RadioRenderer(
                     .selectable(
                         selected = selected,
                         enabled = !field.disabled,
+                        role = Role.RadioButton,
                         onClick = {
                             form.setFieldValue(name, option.value)
                             form.setFieldTouched(name, true)
@@ -396,7 +415,10 @@ private fun RadioRenderer(
             }
         }
         when {
-            error != null -> Text(error)
+            error != null -> Text(
+                error,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
             field.helperText != null -> Text(field.helperText)
         }
     }
