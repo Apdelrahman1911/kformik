@@ -40,6 +40,14 @@ kotlin {
             implementation(kotlin("test-junit"))
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
             implementation("junit:junit:4.13.2")
+            // Compose Multiplatform's headless UI test harness — `runComposeUiTest { ... }`
+            // works on JVM via a Swing-based renderer; no display server / xvfb required.
+            // Provides setContent / onNodeWithTag / assertions etc. for live @Composable surfaces
+            // (state, dirty, isValid, fieldState, enableReinitialize).
+            @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+            implementation(compose.uiTest)
+            implementation(compose.material3)
+            implementation(compose.desktop.currentOs)
         }
     }
 }
