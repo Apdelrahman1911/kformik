@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Checkbox
@@ -381,11 +382,13 @@ private fun RadioRenderer(
     val binding by form.fieldState(name)
     val currentValue = binding.value
     val error = binding.displayError
-    // Each option row carries its own `Modifier.selectable` so options stay independently
-    // focusable for screen-reader navigation — we do NOT mergeDescendants on the outer Column
-    // (that would collapse all options into a single node). The error Text is still a polite
-    // live region so a newly-appearing validation error is announced when it lands.
-    Column {
+    // `Modifier.selectableGroup()` on the outer Column tells assistive tech (TalkBack /
+    // VoiceOver) that the rows form a single-selection radio group — read out as "1 of N
+    // radio button, selected" instead of N unrelated rows. We deliberately do NOT
+    // mergeDescendants here so each option stays independently focusable for keyboard /
+    // swipe navigation. The error Text remains a polite live region so a newly-appearing
+    // validation error is announced when it lands.
+    Column(modifier = Modifier.selectableGroup()) {
         displayLabel(field)?.let { Text(it) }
         options.forEach { option ->
             val selected = option.value == currentValue
