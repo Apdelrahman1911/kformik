@@ -178,8 +178,15 @@ class FormikController<V>(
      * Atomic array mutation under the controller's reducer mutex, used by [FieldArrayController].
      * [transform] receives the locked state snapshot and returns the new state; only its
      * values/touched/errors slices are committed (via compare-and-set onto the latest state, so a
-     * concurrent lock-free setter is not clobbered). Bumps the validation generation atomically with
-     * the write and (if [validate]) runs validation against the new values under that generation.
+     * concurrent lock-free setter is not clobbered). Bumps the validation generation atomically
+     * with the write — but ONLY AFTER the transform succeeds, so a throw from inside [transform]
+     * (e.g. `require(idx >= 0)` in `insert(badIndex)`) does not leave a phantom generation that
+     * invalidates in-flight validators without a corresponding state change.
+     *
+     * Validation routes through [scheduleChangeValidation] so it respects
+     * [FormikConfig.validateDebounceMs] — pre-1.9.0 array mutations validated synchronously even
+     * when the form was configured with a debounce, surprising consumers who expected uniform
+     * debounce semantics across all change-triggered validation.
      *
      * Not part of the public API — its contract may change between releases.
      */
@@ -191,18 +198,20 @@ class FormikController<V>(
         var gen = 0L
         var newValues: Any? = null
         mutex.withLock {
-            gen = ++validationGeneration
-            // Run the (pure) transform INSIDE the compare-and-set, so its values/touched/errors
-            // realignment is computed against the latest state on each retry — a concurrent
-            // lock-free setter (setFieldError/setErrors/...) is therefore not clobbered.
+            // Apply the transform inside the CAS first. If transform throws, the exception
+            // propagates out of withLock cleanly — no state mutation, no gen bump, no phantom
+            // generation to invalidate in-flight validators.
             _state.update { current ->
                 val next = transform(current)
                 newValues = next.values
                 next
             }
+            // Only after a successful commit do we bump the generation, so the in-flight check
+            // accurately reflects "a new mutation landed" rather than "a mutation attempted".
+            gen = ++validationGeneration
         }
         @Suppress("UNCHECKED_CAST")
-        if (validate) runAllValidationsAndCommit(newValues as V, gen)
+        if (validate) scheduleChangeValidation(newValues as V, gen)
     }
 
     /**

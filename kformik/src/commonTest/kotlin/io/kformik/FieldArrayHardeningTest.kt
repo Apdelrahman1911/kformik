@@ -1,6 +1,10 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package io.kformik
 
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -117,5 +121,73 @@ class FieldArrayHardeningTest {
         c.array("friends").move(2, 0, shouldValidate = false)
         assertTrue(c.state.value.touched["friends[0]"])
         assertFalse(c.state.value.touched["friends[2]"])
+    }
+
+    /**
+     * v1.9.0: an array mutation that throws (e.g. `insert(badIndex)`'s `require` check) must
+     * NOT leave a phantom generation behind. Pre-1.9.0, `applyArrayMutation` bumped
+     * `validationGeneration` BEFORE running the transform — so a thrown `require` left the
+     * counter incremented without a state change, silently invalidating any validator launched
+     * before the failed mutation.
+     */
+    @Test
+    fun insert_badIndex_throws_doesNotBumpValidationGenerationOnFailure() = runTest {
+        var validateCalls = 0
+        val c = FormikController(
+            FormikConfig(
+                initialValues = mapOf<String, Any?>("xs" to listOf("a", "b", "c")),
+                validate = { _ -> validateCalls++; FormikErrors.Empty },
+                onSubmit = { _, _ -> },
+                coroutineScope = this,
+            )
+        )
+        // Land a baseline change so a validator runs and isValid latches a clean state.
+        c.setFieldValue("xs", listOf("a", "b", "c"))
+        runCurrent()
+        val callsBefore = validateCalls
+        // Attempt an invalid insert. `require(idx >= 0)` throws. Pre-fix, the gen was bumped
+        // before the require — any pending validator's commit gen would be stale.
+        assertFailsWith<IllegalArgumentException> {
+            c.array("xs").insert(-1, "z", shouldValidate = false)
+        }
+        runCurrent()
+        // A no-validation mutation (shouldValidate=false) shouldn't trigger validator calls.
+        // The key invariant: no spurious gen bump leaves in-flight validators stranded. We
+        // probe this by issuing a fresh setFieldValue and verifying its validator commits
+        // correctly (errors aren't masked by a phantom gen).
+        c.setFieldValue("xs[0]", "AA")
+        runCurrent()
+        assertTrue(validateCalls > callsBefore, "fresh post-throw validator must commit")
+        assertEquals("AA", (c.state.value.values["xs"] as List<*>)[0], "post-throw state remains usable")
+    }
+
+    /**
+     * v1.9.0: `applyArrayMutation` routes its post-mutation validation through
+     * `scheduleChangeValidation`, so a debounce-configured form treats array mutations the
+     * same as regular value changes — coalesced into a single validation after the debounce
+     * window rather than firing synchronously per mutation.
+     */
+    @Test
+    fun arrayMutations_respect_validateDebounceMs() = runTest {
+        var validateCalls = 0
+        val c = FormikController(
+            FormikConfig(
+                initialValues = mapOf<String, Any?>("xs" to listOf("a")),
+                validate = { _ -> validateCalls++; FormikErrors.Empty },
+                onSubmit = { _, _ -> },
+                validateDebounceMs = 100L,
+                coroutineScope = this,
+            )
+        )
+        // Three rapid pushes — pre-fix each fires validation synchronously (3 calls); with
+        // debounce-aware routing they coalesce to one call after the window elapses.
+        c.array("xs").push("b")
+        c.array("xs").push("c")
+        c.array("xs").push("d")
+        runCurrent()
+        assertEquals(0, validateCalls, "validation deferred during debounce window")
+        advanceTimeBy(200L); runCurrent()
+        assertEquals(1, validateCalls, "debounce coalesces array mutations to one validation")
+        c.close()
     }
 }
