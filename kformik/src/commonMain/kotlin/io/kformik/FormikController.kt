@@ -236,6 +236,16 @@ class FormikController<V>(
      */
     private var _debounceCollectorJob: Job? = null
 
+    /**
+     * The most-recent debounced-validation run launched by the collector. When the collector
+     * picks up a newer emission, it cancels this Job before launching the replacement — so a
+     * slow `validateAsync` (typically a network round-trip) is interrupted instead of running
+     * to completion only to have its result discarded at the generation-guarded commit step.
+     * Requires the consumer's `validateAsync` to be cancel-cooperative (check `isActive` or
+     * await a suspending call that propagates cancellation).
+     */
+    private var _inFlightDebouncedValidation: Job? = null
+
     init {
         if (config.validateOnMount) {
             scope.launch {
@@ -256,20 +266,26 @@ class FormikController<V>(
                     .collect { (values, gen) ->
                         // Skip if a newer mutation has already bumped the generation past us —
                         // a blur or another change-validation kicked off in the foreground while
-                        // we were debouncing, and its result will commit instead. Without this
-                        // check the stale run still EXECUTES the user's validate/validateAsync
-                        // (only its commit step is dropped via the gen guard inside
-                        // runAllValidationsAndCommit), which doubles network round-trips on
-                        // validateAsync-backed forms. The read is unprotected by the mutex —
-                        // benign race, the worst case is a false-pass that drops at commit-time
-                        // exactly as before.
+                        // we were debouncing, and its result will commit instead. The read is
+                        // unprotected by the mutex — benign race, the worst case is a false-pass
+                        // that drops at commit-time exactly as before.
                         if (gen != validationGeneration) return@collect
-                        try {
-                            runAllValidationsAndCommit(values, gen)
-                        } catch (c: CancellationException) {
-                            throw c
-                        } catch (t: Throwable) {
-                            config.onError?.invoke(t)
+                        // Cancel any previously-running debounced run that is still in-flight.
+                        // Without this, a slow validateAsync (network call) keeps running until
+                        // completion only to have its result dropped at the gen-guarded commit;
+                        // cancelling proactively gives the user's cooperative-cancellation code
+                        // a chance to abort the network request and avoid the wasted round-trip.
+                        _inFlightDebouncedValidation?.cancel(
+                            CancellationException("superseded by newer change/blur (gen=$gen)")
+                        )
+                        _inFlightDebouncedValidation = scope.launch {
+                            try {
+                                runAllValidationsAndCommit(values, gen)
+                            } catch (c: CancellationException) {
+                                throw c
+                            } catch (t: Throwable) {
+                                config.onError?.invoke(t)
+                            }
                         }
                     }
             }

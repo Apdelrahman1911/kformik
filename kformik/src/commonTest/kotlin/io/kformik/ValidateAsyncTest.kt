@@ -278,4 +278,55 @@ class ValidateAsyncTest {
         assertEquals(0, asyncCalls, "sync keeps failing → async skipped on every trigger")
         c.close()
     }
+
+    /**
+     * v1.9.0: a slow `validateAsync` (typically a network round-trip) gets cancelled when a
+     * newer change-validation supersedes it. Pre-1.9.0, the in-flight call ran to completion
+     * only to have its result dropped at the generation-guarded commit step — wasted network
+     * round-trips.
+     *
+     * Setup: 50ms debounce, validateAsync delays 5_000ms. Type once at t=0, advance past the
+     * first debounce so async-1 starts. Type again at t=150 (well past the first debounce
+     * window, so the second emission is processed separately), advance past the second debounce
+     * so async-2 starts. async-1 should be cancelled mid-delay; only async-2 completes.
+     */
+    @Test
+    fun validateAsync_inFlight_isCancelledOnSupersedingChange() = runTest {
+        var asyncStartCount = 0
+        var asyncCompleteCount = 0
+        val c = FormikController(
+            FormikConfig(
+                initialValues = mapOf<String, Any?>("name" to ""),
+                validateDebounceMs = 50L,
+                validateAsync = { _ ->
+                    asyncStartCount++
+                    kotlinx.coroutines.delay(5_000L)
+                    asyncCompleteCount++
+                    FormikErrors.Empty
+                },
+                onSubmit = { _, _ -> },
+                coroutineScope = this,
+            )
+        )
+        c.setFieldValue("name", "abc")
+        advanceTimeBy(100L); runCurrent()
+        assertEquals(1, asyncStartCount, "first async started after the first debounce window")
+        assertEquals(0, asyncCompleteCount, "still in flight")
+
+        // Supersede with a new change well past the first emission's debounce window so the
+        // pipeline emits a second, distinct (values, gen) — and the collector cancels async-1.
+        c.setFieldValue("name", "abcd")
+        advanceTimeBy(100L); runCurrent()
+        assertEquals(2, asyncStartCount, "second async started")
+        assertEquals(0, asyncCompleteCount, "first was cancelled mid-delay; second still in flight")
+
+        advanceTimeBy(6_000L); runCurrent()
+        assertEquals(
+            1,
+            asyncCompleteCount,
+            "only the second async completed (first cancelled). Pre-1.9.0 both would have completed.",
+        )
+
+        c.close()
+    }
 }
