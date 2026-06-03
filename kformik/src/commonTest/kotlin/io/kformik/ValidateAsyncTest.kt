@@ -329,4 +329,46 @@ class ValidateAsyncTest {
 
         c.close()
     }
+
+    /**
+     * v1.9.0 follow-up regression: `close()` must cancel any in-flight debounced validation,
+     * NOT just the collector that emits validations. The first v1.9.0 attempt only cancelled
+     * `_debounceCollectorJob`; the actual in-flight `validateAsync` (launched as a separate
+     * child via `_inFlightDebouncedValidation`) kept running until the user-supplied scope was
+     * cancelled — defeating the very cancellation mechanism v1.9.0 added (commit c498a31)
+     * exactly when it matters most: the `viewModelScope`-equivalent lifecycle path where the
+     * scope outlives the controller's `close()`.
+     */
+    @Test
+    fun close_cancelsInFlightDebouncedValidation_evenWithCallerOwnedScope() = runTest {
+        var asyncStartCount = 0
+        var asyncCompleteCount = 0
+        val c = FormikController(
+            FormikConfig(
+                initialValues = mapOf<String, Any?>("v" to ""),
+                validateDebounceMs = 50L,
+                validateAsync = { _ ->
+                    asyncStartCount++
+                    kotlinx.coroutines.delay(5_000L)
+                    asyncCompleteCount++
+                    FormikErrors.Empty
+                },
+                onSubmit = { _, _ -> },
+                coroutineScope = this,  // caller-owned scope (the runTest scope)
+            )
+        )
+        c.setFieldValue("v", "x")
+        advanceTimeBy(100L); runCurrent()
+        assertEquals(1, asyncStartCount, "validateAsync started after the debounce window")
+        assertEquals(0, asyncCompleteCount, "still in delay()")
+
+        c.close()
+        runCurrent()
+        advanceTimeBy(6_000L); runCurrent()
+        assertEquals(
+            0,
+            asyncCompleteCount,
+            "in-flight validateAsync must be cancelled by close() even when caller owns the scope",
+        )
+    }
 }

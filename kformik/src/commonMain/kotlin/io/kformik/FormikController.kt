@@ -988,14 +988,20 @@ class FormikController<V>(
     // ------------------------------------------------------------------------------- close
 
     /**
-     * Cancel the controller. If `config.coroutineScope` was supplied, this is a no-op (the
-     * caller owns the scope). Otherwise, cancels the internal scope and stops accepting
-     * mutations.
+     * Cancel the controller. Always cancels controller-owned coroutine Jobs (the debounced
+     * collector + any in-flight debounced validation) so they don't outlive the controller
+     * even when the caller retains the underlying scope. If `config.coroutineScope` was
+     * supplied by the caller, the scope itself is left untouched (caller owns it); otherwise
+     * the internal scope is cancelled.
+     *
+     * Without the in-flight-validation cancel, a slow `validateAsync` (network call) launched
+     * by the debounced collector would keep running after `close()` until the user-supplied
+     * scope finally cancels — defeating the v1.9.0 cancellation mechanism exactly when it
+     * matters most (the supported `viewModelScope`-equivalent lifecycle path).
      */
     fun close() {
-        // Always cancel any controller-owned Jobs (debounced collector etc.) so they don't
-        // outlive the controller even when the user retains the underlying scope.
         _debounceCollectorJob?.cancel()
+        _inFlightDebouncedValidation?.cancel()
         if (config.coroutineScope == null) {
             scope.cancel()
         }
