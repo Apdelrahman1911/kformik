@@ -22,11 +22,14 @@ class DefaultValuesTest {
     @Test fun multiline_default_isEmptyString() =
         assertEquals("", defaultValueFor(FieldType.Multiline))
 
-    @Test fun number_default_isZeroDouble_whenNotAsInt() =
-        assertEquals(0.0, defaultValueFor(FieldType.Number(asInt = false)))
+    // Number defaults to null (changed in v1.8.1 from 0/0.0) so that required() actually enforces
+    // "must enter a value" — 0 was treated as a value and silently passed the required check.
+    // Consumers who want a starting numeric value pass an explicit Field(initialValue = 0) etc.
+    @Test fun number_default_isNull_whenNotAsInt() =
+        assertNull(defaultValueFor(FieldType.Number(asInt = false)))
 
-    @Test fun number_default_isZeroInt_whenAsInt() =
-        assertEquals(0, defaultValueFor(FieldType.Number(asInt = true)))
+    @Test fun number_default_isNull_whenAsInt() =
+        assertNull(defaultValueFor(FieldType.Number(asInt = true)))
 
     @Test fun checkbox_default_isFalse() =
         assertEquals(false, defaultValueFor(FieldType.Checkbox))
@@ -57,12 +60,14 @@ class DefaultValuesTest {
     @Test fun buildInitialValues_field_initialValue_winsOverDefault() {
         val fields = mapOf(
             "name" to Field(type = FieldType.Text, initialValue = "Aisha"),
-            "age" to Field(type = FieldType.Number(asInt = true)),     // no override → 0
+            "age" to Field(type = FieldType.Number(asInt = true)),  // no override → null (was 0 pre-1.8.1)
+            "yearsExperience" to Field(type = FieldType.Number(asInt = true), initialValue = 5),  // override → 5
             "country" to Field(type = FieldType.Select(listOf(SelectOption("us", "USA"))))
         )
         val initial = buildInitialValuesFrom(fields)
         assertEquals("Aisha", initial["name"])
-        assertEquals(0, initial["age"])
+        assertNull(initial["age"], "Number with no initialValue defaults to null (v1.8.1+)")
+        assertEquals(5, initial["yearsExperience"], "explicit initialValue overrides null default")
         assertEquals("us", initial["country"])
     }
 }

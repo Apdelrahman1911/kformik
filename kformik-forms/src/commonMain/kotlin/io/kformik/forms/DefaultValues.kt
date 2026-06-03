@@ -6,9 +6,13 @@ package io.kformik.forms
  *
  * - Text-like ([FieldType.Text] / [Email] / [Password] / [Multiline]) → empty string. Pairs with
  *   `required()`'s blank-string check naturally.
- * - [FieldType.Number] → `0` if `asInt`, else `0.0`. Matches what the renderer's numeric parser
- *   produces on first commit.
- * - [FieldType.Checkbox] / [FieldType.Switch] → `false`.
+ * - [FieldType.Number] → `null`. Pairs with `required()` for a "must enter a number" workflow.
+ *   (Before v1.8.1 this defaulted to `0` / `0.0`, which silently passed `required()` since `0` is
+ *   a value, not absence. Consumers who want a starting numeric value pass an explicit
+ *   `initialValue` such as `18` or `0.0`.)
+ * - [FieldType.Checkbox] / [FieldType.Switch] → `false`. Note: `required()` does not enforce
+ *   "must be checked" on a Boolean (false is a value, not absence) — use a `custom` rule for
+ *   ToS-style mandatory checkboxes.
  * - [FieldType.Select] / [FieldType.Radio] → the **first option's value**, or `null` when the
  *   option list is empty. Picks a valid choice by default; consumers who want "no selection
  *   selected" should provide an explicit `initialValue = null`.
@@ -17,7 +21,7 @@ package io.kformik.forms
  */
 internal fun defaultValueFor(type: FieldType): Any? = when (type) {
     FieldType.Text, FieldType.Email, FieldType.Password, FieldType.Multiline -> ""
-    is FieldType.Number -> if (type.asInt) 0 else 0.0
+    is FieldType.Number -> null
     FieldType.Checkbox, FieldType.Switch -> false
     is FieldType.Select -> type.options.firstOrNull()?.value
     is FieldType.Radio -> type.options.firstOrNull()?.value

@@ -156,30 +156,54 @@ private fun NumberRenderer(
     asInt: Boolean,
 ) {
     val binding by form.fieldState(name)
-    // Always render whatever's stored as a String; the parsed numeric value (Int/Double) is the
-    // canonical commit, but transient partial input ("-", "3.", "") is kept verbatim so the caret
-    // doesn't jump while typing.
-    val raw = when (val v = binding.value) {
+    // The committed value's "natural" string form — what the user would see if they weren't
+    // currently editing. Whatever's stored renders via toString(): Int → "5", Double → "5.0" /
+    // "3.7", String → itself (the partial-input fallback below). Importantly we do NOT coerce
+    // asInt=true Doubles via `.toLong().toString()`: that silently truncated 3.7 to "3", which
+    // was a v1.8.0 bug. Schema rules min/max catch the wrong-type case at validation time.
+    val canonical = when (val v = binding.value) {
         null -> ""
-        is Number -> if (asInt) v.toLong().toString() else v.toDouble().toString()
         else -> v.toString()
     }
+    // Local display buffer. While the user is mid-edit, we render the EXACT typed string instead
+    // of `canonical`, otherwise typing "0.10" would round-trip through Double 0.1 and snap back to
+    // "0.1" on the very next recomposition (and the caret jumps). Buffer is cleared on focus loss
+    // so the field resyncs to the canonical form once the user stops typing. Programmatic
+    // setValue calls land in the canonical form immediately; the buffer only matters while the
+    // user has focus.
+    var displayBuffer by remember(name) { mutableStateOf<String?>(null) }
+    var hadFocus by remember(name) { mutableStateOf(false) }
+    val display = displayBuffer ?: canonical
     val error = binding.displayError
     OutlinedTextField(
-        value = raw,
+        value = display,
         onValueChange = { input ->
+            displayBuffer = input
             val parsed: Any? = when {
                 input.isEmpty() -> null
                 asInt -> input.toIntOrNull()
-                else -> input.toDoubleOrNull()
+                // Locale normalization: accept ',' as decimal separator (German "1,5", French
+                // "0,3"). The en-US thousands-separator pattern "1,234.56" is out of scope —
+                // consumers in such locales sanitize via `renderOverride`.
+                else -> input.replace(',', '.').toDoubleOrNull()
             }
-            // Commit the parsed number when valid, else the raw string so the caret holds; schema
-            // numeric rules (min/max) ignore non-Number values, which is the expected pass-through.
+            // Commit the parsed number when valid, else the raw string. Schema numeric rules
+            // (min/max) ignore non-Number values, so a transient String during typing doesn't
+            // throw — it just bypasses range checks until input parses again.
             form.setFieldValue(name, parsed ?: input)
         },
         modifier = Modifier
             .fillMaxWidth()
-            .then(blurTouches(form, name)),
+            .onFocusChanged { fs ->
+                if (fs.isFocused) {
+                    hadFocus = true
+                } else if (hadFocus) {
+                    // Clear the buffer so the next recomposition shows the canonical form, then
+                    // mark touched so blur-triggered validation surfaces any error.
+                    displayBuffer = null
+                    form.setFieldTouched(name, true)
+                }
+            },
         enabled = !field.disabled,
         label = displayLabel(field)?.let { { Text(it) } },
         placeholder = field.placeholder?.let { { Text(it) } },
