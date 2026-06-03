@@ -298,9 +298,11 @@ class FormikController<V>(
                         // completion only to have its result dropped at the gen-guarded commit;
                         // cancelling proactively gives the user's cooperative-cancellation code
                         // a chance to abort the network request and avoid the wasted round-trip.
-                        _inFlightDebouncedValidation?.cancel(
-                            CancellationException("superseded by newer change/blur (gen=$gen)")
-                        )
+                        // (No-arg `cancel()` here — passing a CancellationException("…") cause
+                        // is awkward across commonMain due to the kotlin.coroutines.cancellation
+                        // vs kotlinx.coroutines.CancellationException typealias mismatch in
+                        // commonMain metadata compilation.)
+                        _inFlightDebouncedValidation?.cancel()
                         _inFlightDebouncedValidation = scope.launch {
                             try {
                                 runAllValidationsAndCommit(values, gen)
