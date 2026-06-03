@@ -132,6 +132,53 @@ class MiscHardeningTest {
         assertFails { c.valueAt("name") }
     }
 
+    /**
+     * v1.9.0 regression: a [FormSchema] schema attached to a typed (non-Map) form now reads
+     * field values through the controller's configured [ValuesUpdater]. Pre-1.9.0, FormSchema's
+     * internal `readValue` fell through to `getIn` for non-Map values, which only walks Map/List
+     * trees — every per-field rule received `null` regardless of the actual Profile field, so
+     * `required()`-style rules silently misfired and per-field validators on typed forms had no
+     * way to inspect their fields.
+     */
+    @Test
+    fun typedSchema_perFieldValidator_seesActualValueViaConfiguredUpdater() = runTest {
+        val schema = formSchema<Profile> {
+            field("name") {
+                custom("must-be-bob") { value, _ ->
+                    if (value != "bob") "Got '$value', expected 'bob'" else null
+                }
+            }
+            field("age") {
+                custom("must-be-30") { value, _ ->
+                    if (value != 30) "Got '$value', expected 30" else null
+                }
+            }
+        }
+        val c = FormikController(
+            FormikConfig(
+                initialValues = Profile(name = "bob", age = 30),
+                valuesUpdater = ProfileUpdater,
+                schemaValidator = schema,
+                onSubmit = { _, _ -> },
+                coroutineScope = this,
+            )
+        )
+        // Pre-1.9.0: per-field validators saw null for both fields — `value != "bob"` evaluates
+        // true (since null != "bob"), so the schema would report errors EVERYWHERE despite the
+        // initial state being correct. Post-fix: validators see the actual Profile values, no
+        // false positives on a clean baseline.
+        val errs = schema.validate(Profile("bob", 30))
+        assertNull(errs["name"], "name validator must see actual 'bob' value, not null")
+        assertNull(errs["age"], "age validator must see actual 30 value, not null")
+
+        // And mutation through the controller surfaces fresh errors via the schema:
+        c.setFieldValue("name", "alice", shouldValidate = false)
+        val mutated = c.validateForm()
+        assertEquals("Got 'alice', expected 'bob'", mutated["name"])
+        // age still clean (still 30 in mutated Profile).
+        assertNull(mutated["age"])
+    }
+
     // ---- reinitialize branches ([75]) -------------------------------------------------------
 
     @Test

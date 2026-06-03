@@ -224,14 +224,61 @@ class FormSchema<V> internal constructor(
         .map { it.key }
         .toSet()
 
-    private fun readValue(values: V, path: String): Any? = when {
-        values is Map<*, *> -> {
-            @Suppress("UNCHECKED_CAST")
-            MapValuesUpdater.getAt(values as Map<String, Any?>, path)
+    /**
+     * Optional values reader configured by the [FormikController]. When the form's value type is
+     * NOT `Map<String, Any?>` (a typed `data class` or similar), the controller wires its
+     * configured [ValuesUpdater] here so that schema-level per-field validators can actually read
+     * the field's value via path. Pre-1.9.0 this wasn't routed — non-Map values fell through to
+     * `getIn` which only handles Map / List trees, so every per-field validator received `null`
+     * regardless of what the form held. Typed-data-class forms with a schema therefore silently
+     * "passed" every per-field rule that returned null-on-null.
+     *
+     * Set once via [configureValuesUpdater] during controller construction; read by `validate`
+     * thereafter. The single-writer-then-many-reader pattern is publication-safe under Kotlin's
+     * memory model so long as the write happens-before the first read — which is guaranteed by
+     * the controller calling `configureValuesUpdater` in its `init {}` block before exposing
+     * itself to other coroutines.
+     */
+    private var configuredUpdater: ValuesUpdater<V>? = null
+
+    /**
+     * Wire this schema to the form's [ValuesUpdater]. Called once by [FormikController] during
+     * construction when both a custom `valuesUpdater` and a `FormSchema` schemaValidator are
+     * configured. Consumers building a schema standalone (no controller) can set this themselves
+     * for typed values; for `Map<String, Any?>` forms the default works fine without it.
+     */
+    @InternalKformikApi
+    fun configureValuesUpdater(updater: ValuesUpdater<V>): FormSchema<V> = apply {
+        this.configuredUpdater = updater
+    }
+
+    private fun readValue(values: V, path: String): Any? {
+        // Prefer the controller-supplied updater when present — it knows how to walk typed data
+        // class values that getIn / MapValuesUpdater cannot.
+        configuredUpdater?.let { return it.getAt(values, path) }
+        return when {
+            values is Map<*, *> -> {
+                @Suppress("UNCHECKED_CAST")
+                MapValuesUpdater.getAt(values as Map<String, Any?>, path)
+            }
+            else -> getIn(values, path)
         }
-        else -> getIn(values, path)
     }
 }
+
+/**
+ * Marker for APIs that are part of the public surface but only meant to be consumed by other
+ * Kformik internals (e.g. `FormikController` wiring `FormSchema.configureValuesUpdater`). Source
+ * stability is best-effort across releases; we use a [RequiresOptIn] annotation so accidental use
+ * from external code surfaces as a compile-time opt-in nag.
+ */
+@RequiresOptIn(
+    level = RequiresOptIn.Level.ERROR,
+    message = "Kformik internal API — exposed only for cross-module wiring inside the library. Not subject to source-compat guarantees.",
+)
+@Retention(AnnotationRetention.BINARY)
+@Target(AnnotationTarget.CLASS, AnnotationTarget.FUNCTION, AnnotationTarget.PROPERTY)
+public annotation class InternalKformikApi
 
 /** A single validation rule attached to a path. */
 class FieldRule<V> internal constructor(

@@ -256,6 +256,20 @@ class FormikController<V>(
     private var _inFlightDebouncedValidation: Job? = null
 
     init {
+        // If the schema is a FormSchema (the common case for the public DSL) AND the form's value
+        // type isn't a Map, wire the controller's ValuesUpdater into the schema. Pre-1.9.0,
+        // FormSchema's internal `readValue` fell through to `getIn` (Map/List-only) for non-Map
+        // values, returning null for every path — schema-level per-field rules silently received
+        // null on every typed form. Now FormSchema delegates path reads to the same updater the
+        // controller uses for state mutations, so a typed `data class` schema validates correctly.
+        @OptIn(InternalKformikApi::class)
+        run {
+            val schema = config.schemaValidator
+            if (schema is FormSchema<*>) {
+                @Suppress("UNCHECKED_CAST")
+                (schema as FormSchema<V>).configureValuesUpdater(updater)
+            }
+        }
         if (config.validateOnMount) {
             scope.launch {
                 revalidateCurrent()

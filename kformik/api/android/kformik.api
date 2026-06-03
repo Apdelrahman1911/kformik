@@ -105,6 +105,7 @@ public final class io/kformik/FormFieldInfo {
 }
 
 public final class io/kformik/FormSchema : io/kformik/SchemaValidator {
+	public final fun configureValuesUpdater (Lio/kformik/ValuesUpdater;)Lio/kformik/FormSchema;
 	public final fun fieldInfo (Ljava/lang/String;)Lio/kformik/FormFieldInfo;
 	public final fun fields ()Ljava/util/Set;
 	public final fun hasField (Ljava/lang/String;)Z
@@ -352,6 +353,9 @@ public final class io/kformik/FormikUtilsKt {
 	public static synthetic fun getIn$default (Ljava/lang/Object;Ljava/lang/String;Ljava/lang/Object;ILjava/lang/Object;)Ljava/lang/Object;
 	public static final fun path (Ljava/util/Map;Ljava/lang/String;)Ljava/lang/Object;
 	public static final fun setIn (Ljava/util/Map;Ljava/lang/String;Ljava/lang/Object;)Ljava/util/Map;
+}
+
+public abstract interface annotation class io/kformik/InternalKformikApi : java/lang/annotation/Annotation {
 }
 
 public final class io/kformik/MapValuesUpdater : io/kformik/ValuesUpdater {
