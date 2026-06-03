@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
@@ -33,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -229,14 +231,25 @@ private fun CheckboxRenderer(
     val binding by form.fieldState(name)
     val checked = binding.value as? Boolean ?: false
     val error = binding.displayError
+    // `Modifier.toggleable` on the Row makes the entire row (widget + label) a single click
+    // target. The inner Checkbox passes `onCheckedChange = null` so the gesture isn't
+    // double-dispatched. `role = Role.Checkbox` tells assistive tech the semantic shape.
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(
-                checked = checked,
-                onCheckedChange = { newChecked ->
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.toggleable(
+                value = checked,
+                enabled = !field.disabled,
+                role = Role.Checkbox,
+                onValueChange = { newChecked ->
                     form.setFieldValue(name, newChecked)
                     form.setFieldTouched(name, true)
                 },
+            ),
+        ) {
+            Checkbox(
+                checked = checked,
+                onCheckedChange = null,
                 enabled = !field.disabled,
             )
             displayLabel(field)?.let { Text(it) }
@@ -257,19 +270,30 @@ private fun SwitchRenderer(
     val binding by form.fieldState(name)
     val checked = binding.value as? Boolean ?: false
     val error = binding.displayError
+    // Same pattern as CheckboxRenderer: the full Row (label + Switch) is one click target via
+    // `Modifier.toggleable`. The pre-fix code only had Switch's own onCheckedChange, so the
+    // `SpaceBetween` gap between label and switch was a dead zone — only the thumb itself was
+    // interactive, surprising for both pointer and screen-reader users.
     Column {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = checked,
+                    enabled = !field.disabled,
+                    role = Role.Switch,
+                    onValueChange = { newChecked ->
+                        form.setFieldValue(name, newChecked)
+                        form.setFieldTouched(name, true)
+                    },
+                ),
         ) {
             displayLabel(field)?.let { Text(it) }
             Switch(
                 checked = checked,
-                onCheckedChange = { newChecked ->
-                    form.setFieldValue(name, newChecked)
-                    form.setFieldTouched(name, true)
-                },
+                onCheckedChange = null,
                 enabled = !field.disabled,
             )
         }
