@@ -599,7 +599,28 @@ class FormikController<V>(
         _state.update { it.copy(isSubmitting = isSubmitting) }
     }
 
-    /** Atomic, lambda-based state update (escape hatch). */
+    /**
+     * Atomic, lambda-based state update — the documented escape hatch for tests and rare cases
+     * where the typed setters (`setFieldValue`, `setErrors`, etc.) don't fit.
+     *
+     * **Generation tracking caveat.** This setter is non-suspending and therefore cannot acquire
+     * the controller's mutex; it does NOT bump `validationGeneration`. Practical consequence: an
+     * in-flight validator launched BEFORE a `setFormikState` call commits its errors against the
+     * pre-setFormikState values, because its gen check still matches at commit time. For typical
+     * uses (test fixtures, applying a server-side error map, toggling status) this is fine — but
+     * if you mutate `values` here and have an async validator in flight, the validator's stale
+     * errors will overwrite your update's would-be-clean state.
+     *
+     * Mitigations:
+     *  - For value mutations, prefer the mutex-protected setters (`setFieldValue`, `setValues`)
+     *    which DO bump the generation atomically.
+     *  - If you must mutate values via `setFormikState`, follow up with `setErrors(FormikErrors
+     *    .Empty)` (or `validateForm()`) to overwrite any stale errors a previously-running
+     *    validator may commit.
+     *
+     * A future major version may migrate `validationGeneration` to `atomicfu` to close this gap
+     * without changing the escape hatch's non-suspending signature.
+     */
     override fun setFormikState(updater: (FormikState<V>) -> FormikState<V>) {
         if (!scope.isActive) return
         _state.update(updater)
