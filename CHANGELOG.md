@@ -2,12 +2,45 @@
 
 All notable changes are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.8.0] — 2026-06-03
 
 ### Added
 
 - **New `:kformik-forms` module** — a declarative form layer on top of `:kformik-compose`. Describe a form as `Map<String, Field>` (each `Field` carries `type`, `label`, `placeholder`, `helperText`, `initialValue`, `required`, `disabled`, and a `rules` block reusing the existing schema DSL) and pass it to `KformikForm(fields, onSubmit)` to get a fully wired Material 3 form: per-field initial values + validation schema + submit gating + per-keystroke / on-blur / on-submit validation hooks. Ten field types ship in v1: `Text`, `Email`, `Password`, `Multiline`, `Number`, `Checkbox`, `Switch`, `Select`, `Radio`, `Date`. The `Date` renderer stores ISO `yyyy-MM-dd` `String?` (no `kotlinx-datetime` types in the API surface). Escape hatches: per-field `renderOverride`, custom `submitButton` slot, optional `extraValidate` callback, and pass-through for `validateDebounceMs` + `validateAsync` from v1.7.0. New module artifact at `io.github.apdelrahman1911:kformik-forms:1.8.0` (Android + Desktop JVM + iOS targets). Reference: `docs/FORMS_USAGE.md`. 24 unit tests in `kformik-forms/src/jvmTest`.
-- `rememberFormik` now forwards the v1.7.0 `validateDebounceMs` and `validateAsync` parameters from `FormikConfig`. Both are appended at the end of the parameter list (binary-compatible for older positional callers) and `validateAsync` is tracked with `rememberUpdatedState` so callback identity stays fresh across recompositions. `kformik-compose/api/{jvm,android}/kformik-compose.api` baselines updated.
+- `rememberFormik` now forwards the v1.7.0 `validateDebounceMs` and `validateAsync` parameters from `FormikConfig`. Both are appended at the end of the parameter list and `validateAsync` is tracked with `rememberUpdatedState` so callback identity stays fresh across recompositions. `kformik-compose/api/{jvm,android}/kformik-compose.api` baselines updated. See **Binary compatibility** below for the JVM-bytecode caveat.
+- `rememberFormik` now also wraps `schemaValidator` via `rememberUpdatedState` (symmetric with `validate` / `validateAsync` / `onSubmit` / `onReset` / `onError`). An inline schema that closes over changing state — e.g. `formSchema { field("email") { minLength(minLenVar) } }` where `minLenVar` is a `State` — now picks up the latest captures across recompositions instead of silently keeping the first-composition instance.
+
+### Fixed (concurrency hardening in `:kformik`)
+
+Three real interleaving races between mutex-held setters and the lock-free `setFormikState` escape hatch, surfaced by a multi-agent review of the v1.7.0 controller. Each one is reproduced by a JVM stress test in `ConcurrencyStressTest`.
+
+- **`setFieldValue` / `setValues((V) -> V)` CAS clobber.** Both setters used to compute `next = setAt(_state.value.values, …)` BEFORE entering `_state.update`. A concurrent lock-free `setFormikState` landing between snapshot read and CAS commit would have its `values` change silently overwritten by the stale `it.copy(values = next)` on the subsequent retry. Fix: move the `setAt` / `updater(…)` call INSIDE the `_state.update` lambda so each CAS retry recomputes against the latest `current.values`. Mirrors the existing `applyArrayMutation` pattern. Pinned by `setFieldValue_andLockFreeSetFormikState_bothWritesSurvive` (150 iters) and the `setValues((V) -> V)` equivalent.
+- **`submit()` pinning stale `submitValues`.** `submit()` used to read `cur = _state.value` BEFORE its `_state.update` and return `cur.values` from the `withLock` block as the snapshot passed to `config.onSubmit`. A lock-free `setFormikState` interleaved inside the mutex window caused `onSubmit` to receive OLD values while published state showed NEW ones. Fix: capture `submitValues = current.values` from inside the CAS lambda so the value passed to `onSubmit` matches what was committed.
+- **`submit()` single-flight gate independent of `isSubmitting` flag.** The pre-fix code gated reentrant submits on `_state.value.isSubmitting` inside the reducer mutex. A `resetForm()` landing while `submit()` was awaiting `config.onSubmit` (mutex released) would flip `isSubmitting = false`; the next `submit()` would then pass the check and run concurrently with the first. Fix: a dedicated `submitMutex` acquired via `tryLock` for the entire submit lifecycle. `resetForm()` keeps its prior Formik-compatible behavior of clearing the visible flag — the structural gate is independent. Pinned by `submit_singleFlight_secondSubmitNoOpEvenAfterReset` (deterministic).
+
+### Fixed (`:kformik-forms` default renderers)
+
+The forms layer was added in this same release but its renderers shipped with three correctness bugs surfaced by the same review pass — all fixed before tagging.
+
+- **Renderers now subscribe per-field via `ComposeFormik.fieldState(name)`** instead of plain snapshot reads (`form.value(name)` / `form.displayError(name)`). Standalone `KformikFields` now correctly re-renders on every keystroke; the previous code only worked when wrapped in `KformikForm`, which papered over the issue by subscribing to whole-form state at the column level.
+- **Renderers now mark fields touched.** Text / Number use `Modifier.onFocusChanged` gated by a `hadFocus` flag so initial composition doesn't pre-touch; Checkbox / Switch / Select / Radio / Date touch on change. Errors now appear after the user actually interacts with the field, not only after `submit()` touches everything.
+- **`KformikForm` controller-key derived from field shape** instead of the raw `fields` map. The previous `key = fields` failed for closure-capturing `rules` lambdas: `Field` is a data class whose `rules: () -> Unit` member is part of structural `equals()`, so a non-singleton lambda made every recomposition produce a fresh `Field` and rebuild the controller, wiping user input. The new key incorporates `name`, `type`, `required`, `disabled`, and `initialValue` — stable across lambda-identity changes but rebuilds on real shape changes.
+- `RadioRenderer` no longer double-dispatches its click: the inner `RadioButton.onClick = null`, so the parent `selectable` row is the sole click target.
+
+### Binary compatibility
+
+> ⚠️ **`rememberFormik` is a binary break against v1.7.0.** The two new parameters
+> (`validateDebounceMs`, `validateAsync`) are APPENDED at the end of the parameter list. This
+> preserves Kotlin source compatibility via default arguments, but the JVM positional descriptor
+> changes — consumers compiled against v1.7.0's `rememberFormik` will hit `NoSuchMethodError`
+> against v1.8.0+. The library is at v1.x and the `rememberFormik` public surface is small enough
+> that this is accepted as a documented break rather than mitigated via deprecated-hidden
+> overloads; future signature growth will use the deprecated-overload path. `kformik-compose/api/
+> {jvm,android}/kformik-compose.api` baselines updated.
+>
+> See the v1.7.0 errata below for the `FormikConfig` regression that was already shipped with the
+> same shape; the policy going forward is append-only-at-tail for `FormikConfig` and
+> deprecated-hidden overloads for `rememberFormik`-style API changes.
 
 ### Build & CI
 
@@ -17,6 +50,14 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 ### Sample
 
 - New `RegistrationScreen` in `:sample-android-app` demonstrating `KformikForm` end-to-end with `Text`, `Email`, `Password`, `Number`, `Select`, and `Checkbox` fields (the last with a custom "must be checked" rule, since the standard `required()` treats Boolean `false` as a value not as missing).
+- `MainActivity` now hosts both `RegistrationScreen` (default tab) and `LoginScreen` in a `TabRow`, so reviewers can compare the declarative form against the equivalent hand-wired `rememberFormik` code side-by-side.
+
+### Coordinates
+
+- `io.github.apdelrahman1911:kformik:1.8.0`
+- `io.github.apdelrahman1911:kformik-compose:1.8.0`
+- `io.github.apdelrahman1911:kformik-forms:1.8.0`
+- `io.github.apdelrahman1911:kformik-ksp:1.8.0`
 
 ## [1.7.0] — 2026-06-02
 
@@ -28,6 +69,23 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 - 14 tests in `ValidateAsyncTest` covering: async runs when sync is clean / absent, skipped when any of (`validate`, `schemaValidator`, field-level) failed, error commit, `validateOnChange=false` interaction, blur + mount + submit triggers, async-blocks-submit semantics, F2 × F3 interplay (debounce → sync → async circuit-break).
 
 ### Binary compatibility
+
+> ⚠️ **Errata (corrected 2026-06-03):** This release IS a binary break for callers compiled
+> against v1.6.0's `FormikConfig`. The original CHANGELOG entry below understated the scope;
+> what actually happened:
+>
+> - The two new parameters (`validateAsync`, `validateDebounceMs`) were inserted at constructor
+>   positions 6 and 13 respectively — not appended at the tail. The primary constructor's JVM
+>   descriptor therefore changed, and `component6` through `component12` shifted return type or
+>   meaning (not just `component12`+). `copy()` changed correspondingly. Consumers compiled
+>   against v1.6.0's `FormikConfig` hit `NoSuchMethodError` against v1.7.0+.
+> - Source compatibility IS preserved for Kotlin callers using named-argument construction (the
+>   dominant pattern) — recompiling against v1.7.0 works without source changes.
+>
+> The library is at v1.x and the published v1.7.0 artifact on Maven Central is unchanged; this
+> errata only corrects the documentation. Going forward, `FormikConfig` follows append-only-at-tail
+> for new optional parameters, and `rememberFormik`-style API growth uses deprecated-hidden
+> overloads.
 
 - `FormikConfig`'s synthetic constructor signature gained two parameters (`validateDebounceMs: Long?`, `validateAsync: (suspend (V) -> FormikErrors)?`) alongside the other `validate*` options. Source-compatible for Kotlin callers using named-argument construction (the dominant pattern). Component functions (`component12`+) shift — only affects code that positionally destructures `FormikConfig`, which is rare. `api/jvm/kformik.api` and `api/android/kformik.api` baselines updated.
 
