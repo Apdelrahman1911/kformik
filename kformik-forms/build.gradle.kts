@@ -13,6 +13,14 @@ plugins {
 kotlin {
     jvmToolchain(17)
 
+    // Strict explicit-API mode: every public declaration in commonMain must carry an explicit
+    // `public` / `internal` / `private` modifier. This module was written explicit-public from
+    // day one (v1.8.0), so flipping the mode produces no diff — but it locks the discipline in
+    // so future contributors can't accidentally leak an implicit-public into the API surface.
+    // Other published modules (`:kformik`, `:kformik-compose`, `:kformik-ksp`) use implicit
+    // visibility; their migration to explicitApi() is a follow-up task — see CHANGELOG.
+    explicitApi()
+
     androidTarget {
         publishLibraryVariants("release")
     }

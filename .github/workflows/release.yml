@@ -112,11 +112,14 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           ASC_COUNT=$(find ~/.m2/repository/io/github/apdelrahman1911 -name "*.asc" -path "*/$VERSION/*" | wc -l | tr -d ' ')
           echo "Signed artifacts produced: $ASC_COUNT .asc files"
-          if [ "$ASC_COUNT" -lt 46 ]; then
-              # 13 modules pre-1.8 + 5 new :kformik-forms publication targets (umbrella, jvm,
-              # android, iosX64, iosArm64, iosSimulatorArm64) ≈ 76 + 30 = ~106 .asc files in 1.8.0;
-              # 46 is a conservative lower bound that still catches "signing was a no-op".
-              echo "::error::Expected >=46 .asc signatures across all modules; got $ASC_COUNT — signing likely misconfigured"
+          # v1.8.0 produced 113 .asc files across 19 publishable modules — 6 publication targets
+          # per KMP module × (pom + jar + sources + javadoc) ≈ 24 files/module × 3 KMP modules +
+          # the JVM-only :kformik-ksp. Raising the lower bound from 46 (v1.8.0's conservative
+          # guard) to 90 puts the floor close enough to the real count to catch a misconfigured
+          # subset (e.g. one publication's signing block silently skipped) while still leaving
+          # headroom for future modules that haven't been added yet.
+          if [ "$ASC_COUNT" -lt 90 ]; then
+              echo "::error::Expected >=90 .asc signatures across all modules; got $ASC_COUNT — signing likely misconfigured on at least one publication"
               exit 1
           fi
           # Verify one signature actually validates against our public key.
