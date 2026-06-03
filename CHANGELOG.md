@@ -46,6 +46,7 @@ Ongoing v1.9.0 cycle on `harden/v1.9.0` — not yet tagged or published. Commits
   - Checkbox / Switch outer Column uses `Modifier.semantics(mergeDescendants = true)` so the error text is announced inline with the toggle.
   - Radio rows use `Modifier.selectable(role = Role.RadioButton)`, and the outer Column adds `Modifier.selectableGroup()` so TalkBack / VoiceOver announce "1 of N" group navigation.
   - Validation error `Text` adds `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` so newly-appearing errors are spoken when they land.
+  - **Programmatic `Required` marker** via `Modifier.semantics { stateDescription = "Required" }` on every renderer's outer modifier. The visual `*` suffix is announced inconsistently by screen readers (TalkBack tends to skip it; VoiceOver reads "asterisk") — the new state description is read alongside the field's role + value/label, producing announcements like "Email, edit text, Required, empty" instead of "Email star, edit text, empty". Compose has no first-class `required` semantic property; `stateDescription` is the pragmatic best fit without an API redesign.
 - **NumberRenderer correctness.** Display buffer + `hadFocus` to prevent canonicalization mid-typing ("0.10" no longer snaps to "0.1"); `,` → `.` normalization for decimal-comma locales; renders stored value via natural `toString()` (no asInt-driven truncation of Doubles); `defaultValueFor(FieldType.Number)` is now `null` so `required()` actually enforces "must enter a value".
 - **`MainActivity` mounts `RegistrationScreen` and `LoginScreen` via a `TabRow`.** Pre-1.8.1 only `LoginScreen` was reachable from the installed APK despite the CHANGELOG advertising `RegistrationScreen` as the headline v1.8.0 demo.
 - **iOS bridge `close()` preserves caller-owned scopes.** Tracks `ownsOuterScope` so a Swift consumer passing `viewModelScope`-equivalent gets only the bridge's own work cancelled — caller's other coroutines on the same scope continue. All bridge-launched coroutines (observers, fire-and-forget setters) cancel via a dedicated `bridgeJob: SupervisorJob` regardless of outer-scope ownership.
@@ -60,7 +61,8 @@ Ongoing v1.9.0 cycle on `harden/v1.9.0` — not yet tagged or published. Commits
 
 - `:kformik-compose:jvmTest` added to the CI ubuntu job (only the Android variant ran pre-1.8.1).
 - iOS compile coverage expanded to `iosArm64` + `iosX64` for all three KMP modules in the CI ios job; `iosSimulatorArm64` continues to run tests.
-- `explicitApi()` (strict mode) enabled on `:kformik-forms`. The other three published modules use implicit visibility — their `explicitApi()` rollout is deferred to a follow-up cycle (see "Known limitations" below).
+- `explicitApi()` (strict mode) is now enabled on **all four** published modules (`:kformik`, `:kformik-compose`, `:kformik-forms`, `:kformik-ksp`). Every public declaration carries an explicit `public` / `internal` / `private` modifier and explicit return type. `apiCheck` baselines pass unchanged across the rollout.
+- New JVM-host Compose UI test rig for `:kformik-compose` (`runComposeUiTest`-based). 5 tests covering the `@Composable` accessors (`state`, `dirty`, `isValid`, `fieldState`) and the `enableReinitialize` flow — areas the pure-JVM tests in `ComposeFormikTest` explicitly skipped because they required a Compose runtime host. Runs on the same `:kformik-compose:jvmTest` task already wired into CI; no emulator required.
 - Release workflow's `.asc` count guardrail raised from `>= 46` to `>= 90` (v1.8.0 already produced 113 signatures).
 
 ### Docs
@@ -70,13 +72,12 @@ Ongoing v1.9.0 cycle on `harden/v1.9.0` — not yet tagged or published. Commits
 - `docs/RELEASE_PROCESS.md`: version + module list brought current (was stuck at v1.5.0; missed `:kformik-forms`).
 - `DefaultValues.kt`, `FieldType.kt`, `FormSchema.kt` KDocs updated to reflect v1.9.0 semantics (sentinel-based default, Any? value, typed-form schema reads).
 
-### Known limitations (carried into v1.9.0)
+### Known limitations (carried into v1.10+)
 
-- **Compose UI test rig for `:kformik-compose`** — the @Composable accessors (`state`, `dirty`, `isValid`, `fieldState`) and the `enableReinitialize` / `rememberUpdatedState` callbacks still have no direct UI-tested coverage. Adding `ui-test-junit4` + `runComposeUiTest` is a follow-up task (target v1.10).
-- **`gradle/libs.versions.toml` + buildSrc convention plugin** for centralized POM / signing — currently duplicated across the four published modules. Follow-up task.
-- **`explicitApi()` rollout to `:kformik`, `:kformik-compose`, `:kformik-ksp`** — only `:kformik-forms` opted in this cycle (it was already explicit-public from day one; the others would produce larger diffs). Follow-up task.
-- **Semantic `required` marker for screen readers.** Compose has no built-in `Required` semantic property; the current visual `*` suffix reads as "asterisk" on TalkBack. Proper fix needs a Field-level API redesign — deferred to v2.0.
+- **`gradle/libs.versions.toml` + buildSrc convention plugin** for centralized POM / signing — currently duplicated across the four published modules. Functional but redundant; refactor planned for a future cycle.
 - **`fieldOf<T>` element-type validation for parameterized T** — fundamentally limited by JVM / Native generics erasure. Documented in the KDoc with workarounds; not solvable without `kotlin-reflect` (not in the core deps).
+- **`:kformik-compose` Web / WASM targets** — `wasmJs` / `js` not exposed yet. Not on the immediate roadmap.
+- **iOS on-device test execution** — `iosArm64` + `iosX64` cross-compile in CI but only `iosSimulatorArm64Test` runs on the `macos-14` runner. On-device execution would require a self-hosted iOS runner.
 
 ## [1.8.0] — 2026-06-03
 
