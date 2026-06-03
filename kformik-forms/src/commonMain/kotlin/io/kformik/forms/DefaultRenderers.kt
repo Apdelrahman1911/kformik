@@ -2,7 +2,8 @@
 
 package io.kformik.forms
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -395,27 +397,39 @@ private fun DateRenderer(
     val error = binding.displayError
     var showPicker by remember { mutableStateOf(false) }
 
-    Column {
-        OutlinedTextField(
-            value = current.orEmpty(),
-            onValueChange = { /* read-only */ },
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(enabled = !field.disabled) { showPicker = true },
-            readOnly = true,
-            enabled = !field.disabled,
-            label = displayLabel(field)?.let { { Text(it) } },
-            placeholder = field.placeholder?.let { { Text(it) } },
-            isError = error != null,
-            supportingText = supportingText(field, error),
-            trailingIcon = {
-                TextButton(
-                    onClick = { if (!field.disabled) showPicker = true },
-                    enabled = !field.disabled,
-                ) { Text("Pick") }
-            },
-        )
+    // Detect taps anywhere on the field via the OutlinedTextField's interaction source.
+    // `Modifier.clickable` on a `readOnly` OutlinedTextField is swallowed by the field's internal
+    // pointer-input handling — only the trailing "Pick" button was clickable in v1.8.0. Routing
+    // through `interactionSource.interactions` lets us observe taps on the field itself without
+    // fighting the underlying gesture system. PressInteraction.Release fires when the user lifts
+    // their finger on the field — the natural "tap" moment.
+    val interactionSource = remember { MutableInteractionSource() }
+    LaunchedEffect(interactionSource, field.disabled) {
+        interactionSource.interactions.collect { interaction ->
+            if (interaction is PressInteraction.Release && !field.disabled) {
+                showPicker = true
+            }
+        }
     }
+
+    OutlinedTextField(
+        value = current.orEmpty(),
+        onValueChange = { /* read-only */ },
+        modifier = Modifier.fillMaxWidth(),
+        readOnly = true,
+        enabled = !field.disabled,
+        label = displayLabel(field)?.let { { Text(it) } },
+        placeholder = field.placeholder?.let { { Text(it) } },
+        isError = error != null,
+        supportingText = supportingText(field, error),
+        trailingIcon = {
+            TextButton(
+                onClick = { if (!field.disabled) showPicker = true },
+                enabled = !field.disabled,
+            ) { Text("Pick") }
+        },
+        interactionSource = interactionSource,
+    )
 
     if (showPicker) {
         val initialMillis = current?.let(::parseIsoDateToUtcMillis)
