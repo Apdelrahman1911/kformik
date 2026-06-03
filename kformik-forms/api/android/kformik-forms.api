@@ -1,0 +1,145 @@
+public final class io/kformik/forms/ComposableSingletons$DefaultRenderersKt {
+	public static final field INSTANCE Lio/kformik/forms/ComposableSingletons$DefaultRenderersKt;
+	public static field lambda-1 Lkotlin/jvm/functions/Function3;
+	public static field lambda-2 Lkotlin/jvm/functions/Function3;
+	public static field lambda-3 Lkotlin/jvm/functions/Function3;
+	public fun <init> ()V
+	public final fun getLambda-1$kformik_forms_release ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda-2$kformik_forms_release ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda-3$kformik_forms_release ()Lkotlin/jvm/functions/Function3;
+}
+
+public final class io/kformik/forms/ComposableSingletons$KformikFormKt {
+	public static final field INSTANCE Lio/kformik/forms/ComposableSingletons$KformikFormKt;
+	public static field lambda-1 Lkotlin/jvm/functions/Function5;
+	public fun <init> ()V
+	public final fun getLambda-1$kformik_forms_release ()Lkotlin/jvm/functions/Function5;
+}
+
+public final class io/kformik/forms/Field {
+	public static final field $stable I
+	public fun <init> (Lio/kformik/forms/FieldType;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;ZZLkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Lio/kformik/forms/FieldType;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;ZZLkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lio/kformik/forms/FieldType;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/Object;
+	public final fun component6 ()Z
+	public final fun component7 ()Z
+	public final fun component8 ()Lkotlin/jvm/functions/Function1;
+	public final fun copy (Lio/kformik/forms/FieldType;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;ZZLkotlin/jvm/functions/Function1;)Lio/kformik/forms/Field;
+	public static synthetic fun copy$default (Lio/kformik/forms/Field;Lio/kformik/forms/FieldType;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;ZZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lio/kformik/forms/Field;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDisabled ()Z
+	public final fun getHelperText ()Ljava/lang/String;
+	public final fun getInitialValue ()Ljava/lang/Object;
+	public final fun getLabel ()Ljava/lang/String;
+	public final fun getPlaceholder ()Ljava/lang/String;
+	public final fun getRequired ()Z
+	public final fun getRules ()Lkotlin/jvm/functions/Function1;
+	public final fun getType ()Lio/kformik/forms/FieldType;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class io/kformik/forms/FieldType {
+	public static final field $stable I
+}
+
+public final class io/kformik/forms/FieldType$Checkbox : io/kformik/forms/FieldType {
+	public static final field $stable I
+	public static final field INSTANCE Lio/kformik/forms/FieldType$Checkbox;
+}
+
+public final class io/kformik/forms/FieldType$Date : io/kformik/forms/FieldType {
+	public static final field $stable I
+	public static final field INSTANCE Lio/kformik/forms/FieldType$Date;
+}
+
+public final class io/kformik/forms/FieldType$Email : io/kformik/forms/FieldType {
+	public static final field $stable I
+	public static final field INSTANCE Lio/kformik/forms/FieldType$Email;
+}
+
+public final class io/kformik/forms/FieldType$Multiline : io/kformik/forms/FieldType {
+	public static final field $stable I
+	public static final field INSTANCE Lio/kformik/forms/FieldType$Multiline;
+}
+
+public final class io/kformik/forms/FieldType$Number : io/kformik/forms/FieldType {
+	public static final field $stable I
+	public fun <init> ()V
+	public fun <init> (Z)V
+	public synthetic fun <init> (ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun copy (Z)Lio/kformik/forms/FieldType$Number;
+	public static synthetic fun copy$default (Lio/kformik/forms/FieldType$Number;ZILjava/lang/Object;)Lio/kformik/forms/FieldType$Number;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsInt ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/kformik/forms/FieldType$Password : io/kformik/forms/FieldType {
+	public static final field $stable I
+	public static final field INSTANCE Lio/kformik/forms/FieldType$Password;
+}
+
+public final class io/kformik/forms/FieldType$Radio : io/kformik/forms/FieldType {
+	public static final field $stable I
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lio/kformik/forms/FieldType$Radio;
+	public static synthetic fun copy$default (Lio/kformik/forms/FieldType$Radio;Ljava/util/List;ILjava/lang/Object;)Lio/kformik/forms/FieldType$Radio;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOptions ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/kformik/forms/FieldType$Select : io/kformik/forms/FieldType {
+	public static final field $stable I
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lio/kformik/forms/FieldType$Select;
+	public static synthetic fun copy$default (Lio/kformik/forms/FieldType$Select;Ljava/util/List;ILjava/lang/Object;)Lio/kformik/forms/FieldType$Select;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOptions ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/kformik/forms/FieldType$Switch : io/kformik/forms/FieldType {
+	public static final field $stable I
+	public static final field INSTANCE Lio/kformik/forms/FieldType$Switch;
+}
+
+public final class io/kformik/forms/FieldType$Text : io/kformik/forms/FieldType {
+	public static final field $stable I
+	public static final field INSTANCE Lio/kformik/forms/FieldType$Text;
+}
+
+public final class io/kformik/forms/KformikFieldsKt {
+	public static final fun KformikFields-hGBTI10 (Ljava/util/Map;Lio/kformik/compose/ComposeFormik;Landroidx/compose/ui/Modifier;FLkotlin/jvm/functions/Function5;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class io/kformik/forms/KformikFormKt {
+	public static final fun DefaultSubmitButton (Lkotlin/jvm/functions/Function0;ZZLandroidx/compose/runtime/Composer;I)V
+	public static final fun KformikForm-qmNWa6M (Ljava/util/Map;Lkotlin/jvm/functions/Function2;Landroidx/compose/ui/Modifier;FLkotlin/jvm/functions/Function5;Lkotlin/jvm/functions/Function5;ZZZZLjava/lang/Long;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;III)V
+}
+
+public final class io/kformik/forms/SelectOption {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/Object;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/Object;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/Object;Ljava/lang/String;)Lio/kformik/forms/SelectOption;
+	public static synthetic fun copy$default (Lio/kformik/forms/SelectOption;Ljava/lang/Object;Ljava/lang/String;ILjava/lang/Object;)Lio/kformik/forms/SelectOption;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLabel ()Ljava/lang/String;
+	public final fun getValue ()Ljava/lang/Object;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+

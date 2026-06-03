@@ -34,6 +34,7 @@ jobs:
           ./gradlew \
             :kformik:jvmTest :kformik:testDebugUnitTest :kformik:testReleaseUnitTest \
             :kformik-compose:testReleaseUnitTest :kformik-compose:assembleRelease \
+            :kformik-forms:jvmTest :kformik-forms:testReleaseUnitTest :kformik-forms:assembleRelease \
             :kformik-ksp:test \
             :sample-android-app:assembleDebug \
             :examples:compileKotlin \
@@ -72,7 +73,11 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       - name: iOS Simulator tests
-        run: ./gradlew :kformik:iosSimulatorArm64Test --warning-mode=all
+        run: |
+          ./gradlew \
+            :kformik:iosSimulatorArm64Test \
+            :kformik-forms:compileKotlinIosSimulatorArm64 \
+            --warning-mode=all
 
       - name: Upload test reports on failure
         if: failure()

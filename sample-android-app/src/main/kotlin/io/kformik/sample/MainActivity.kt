@@ -11,9 +11,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
@@ -22,11 +27,17 @@ import io.kformik.buildErrors
 import io.kformik.compose.rememberFormik
 
 /**
- * Minimal demonstration of `:kformik-compose` against the real Material 3 API.
+ * Minimal demonstration of both Kformik adapters against the real Material 3 API.
  *
- * This module exists primarily as a *compile target* — it forces every public API in
- * `:kformik-compose` to be exercised against the real Compose foundation + Material 3 deps,
- * which catches API drift faster than the runtime-only sample inside `:kformik-compose`.
+ * Two tabs:
+ *  - **Register** — `:kformik-forms` declarative `KformikForm` (the v1.8.0 headline demo).
+ *  - **Login** — hand-wired `:kformik-compose` `rememberFormik` (the pre-v1.8.0 alternative,
+ *    kept here so reviewers can compare the boilerplate side-by-side).
+ *
+ * Beyond the install demo, this module exists as a *compile target* — it forces every public
+ * API in `:kformik-compose` and `:kformik-forms` to be exercised against the real Compose
+ * foundation + Material 3 deps, which catches API drift faster than the runtime-only sample
+ * inside `:kformik-compose`.
  *
  * To install on an emulator:
  *   ./gradlew :sample-android-app:installDebug
@@ -40,9 +51,32 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    LoginScreen()
+                    SampleHost()
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SampleHost() {
+    var tab by remember { mutableStateOf(0) }
+    Column(modifier = Modifier.fillMaxSize()) {
+        TabRow(selectedTabIndex = tab) {
+            Tab(
+                selected = tab == 0,
+                onClick = { tab = 0 },
+                text = { Text("Register") },
+            )
+            Tab(
+                selected = tab == 1,
+                onClick = { tab = 1 },
+                text = { Text("Login") },
+            )
+        }
+        when (tab) {
+            0 -> RegistrationScreen()
+            1 -> LoginScreen()
         }
     }
 }

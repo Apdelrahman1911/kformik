@@ -95,6 +95,9 @@ jobs:
             :kformik-compose:jvmTest \
             :kformik-compose:assembleRelease \
             :kformik-compose:compileKotlinIosSimulatorArm64 \
+            :kformik-forms:jvmTest \
+            :kformik-forms:assembleRelease \
+            :kformik-forms:compileKotlinIosSimulatorArm64 \
             :kformik-ksp:test \
             :sample-android-app:assembleDebug \
             :examples:compileKotlin \
@@ -109,8 +112,11 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           ASC_COUNT=$(find ~/.m2/repository/io/github/apdelrahman1911 -name "*.asc" -path "*/$VERSION/*" | wc -l | tr -d ' ')
           echo "Signed artifacts produced: $ASC_COUNT .asc files"
-          if [ "$ASC_COUNT" -lt 40 ]; then
-              echo "::error::Expected >=40 .asc signatures across 13 modules; got $ASC_COUNT — signing likely misconfigured"
+          if [ "$ASC_COUNT" -lt 46 ]; then
+              # 13 modules pre-1.8 + 5 new :kformik-forms publication targets (umbrella, jvm,
+              # android, iosX64, iosArm64, iosSimulatorArm64) ≈ 76 + 30 = ~106 .asc files in 1.8.0;
+              # 46 is a conservative lower bound that still catches "signing was a no-op".
+              echo "::error::Expected >=46 .asc signatures across all modules; got $ASC_COUNT — signing likely misconfigured"
               exit 1
           fi
           # Verify one signature actually validates against our public key.

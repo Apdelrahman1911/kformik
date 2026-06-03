@@ -53,14 +53,15 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.apdelrahman1911:kformik:1.5.0")
+    implementation("io.github.apdelrahman1911:kformik:1.8.0")
 
     // Optional
-    implementation("io.github.apdelrahman1911:kformik-compose:1.5.0")  // Compose Multiplatform adapter
+    implementation("io.github.apdelrahman1911:kformik-compose:1.8.0")  // Compose Multiplatform adapter
+    implementation("io.github.apdelrahman1911:kformik-forms:1.8.0")    // Declarative Map<String, Field> form layer
 
     // KSP processor — needs BOTH compileOnly (for @FormValues import) and ksp (to run the processor)
-    compileOnly("io.github.apdelrahman1911:kformik-ksp:1.5.0")
-    ksp("io.github.apdelrahman1911:kformik-ksp:1.5.0")
+    compileOnly("io.github.apdelrahman1911:kformik-ksp:1.8.0")
+    ksp("io.github.apdelrahman1911:kformik-ksp:1.8.0")
 }
 ```
 
@@ -306,6 +307,29 @@ The form-state code above compiles unchanged on Android, Desktop, and iOS. The o
 
 Working Android sample in [`sample-android-app/`](sample-android-app/). More patterns in [`docs/COMPOSE_USAGE.md`](docs/COMPOSE_USAGE.md).
 
+## Declarative forms
+
+A higher-level layer in `kformik-forms` lets you describe the form as `Map<String, Field>` instead of writing each `OutlinedTextField` by hand. Same engine underneath; just less code at the call site:
+
+```kotlin
+KformikForm(
+    fields = mapOf(
+        "email"    to Field(type = FieldType.Email,    label = "Email",    required = true, rules = { email() }),
+        "password" to Field(type = FieldType.Password, label = "Password", required = true, rules = { minLength(8) }),
+        "country"  to Field(
+            type = FieldType.Select(listOf(
+                SelectOption("us", "United States"),
+                SelectOption("eg", "Egypt"),
+            )),
+            label = "Country",
+        ),
+    ),
+    onSubmit = { values -> api.register(values) },
+)
+```
+
+Renders Material 3 widgets, wires up validation, gates the submit button on `isValid && !isSubmitting`. Ten field types ship in v1: `Text`, `Email`, `Password`, `Multiline`, `Number`, `Checkbox`, `Switch`, `Select`, `Radio`, `Date`. Per-field render escape hatch via `renderOverride`, custom submit-button slot, optional debounced + async validation pass-through. Full reference in [`docs/FORMS_USAGE.md`](docs/FORMS_USAGE.md).
+
 ## SwiftUI / iOS
 
 `FormikIosBridge` is a Swift-friendly facade around the same controller. Wrap it in an `ObservableObject`:
@@ -341,6 +365,7 @@ More in [`docs/IOS_USAGE.md`](docs/IOS_USAGE.md).
 ```
 kformik/             core KMP library
 kformik-compose/     Compose Multiplatform adapter (Android / Desktop / iOS)
+kformik-forms/       Declarative Map<String, Field> form layer on top of :kformik-compose
 kformik-ksp/         KSP processor for typed paths + ValuesUpdater (experimental)
 sample-android-app/  Compose sample
 examples/            10 runnable JVM examples

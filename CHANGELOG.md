@@ -6,7 +6,17 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ### Added
 
+- **New `:kformik-forms` module** — a declarative form layer on top of `:kformik-compose`. Describe a form as `Map<String, Field>` (each `Field` carries `type`, `label`, `placeholder`, `helperText`, `initialValue`, `required`, `disabled`, and a `rules` block reusing the existing schema DSL) and pass it to `KformikForm(fields, onSubmit)` to get a fully wired Material 3 form: per-field initial values + validation schema + submit gating + per-keystroke / on-blur / on-submit validation hooks. Ten field types ship in v1: `Text`, `Email`, `Password`, `Multiline`, `Number`, `Checkbox`, `Switch`, `Select`, `Radio`, `Date`. The `Date` renderer stores ISO `yyyy-MM-dd` `String?` (no `kotlinx-datetime` types in the API surface). Escape hatches: per-field `renderOverride`, custom `submitButton` slot, optional `extraValidate` callback, and pass-through for `validateDebounceMs` + `validateAsync` from v1.7.0. New module artifact at `io.github.apdelrahman1911:kformik-forms:1.8.0` (Android + Desktop JVM + iOS targets). Reference: `docs/FORMS_USAGE.md`. 24 unit tests in `kformik-forms/src/jvmTest`.
 - `rememberFormik` now forwards the v1.7.0 `validateDebounceMs` and `validateAsync` parameters from `FormikConfig`. Both are appended at the end of the parameter list (binary-compatible for older positional callers) and `validateAsync` is tracked with `rememberUpdatedState` so callback identity stays fresh across recompositions. `kformik-compose/api/{jvm,android}/kformik-compose.api` baselines updated.
+
+### Build & CI
+
+- `:kformik-forms` added to the `.github/workflows/ci.yml` JVM job (`jvmTest + testReleaseUnitTest + assembleRelease`) and iOS job (`compileKotlinIosSimulatorArm64`).
+- `.github/workflows/release.yml`'s pre-publish verification step extended to cover the new module; the post-publish `.asc` count guardrail raised from `>= 40` to `>= 46` to reflect the additional publication targets.
+
+### Sample
+
+- New `RegistrationScreen` in `:sample-android-app` demonstrating `KformikForm` end-to-end with `Text`, `Email`, `Password`, `Number`, `Select`, and `Checkbox` fields (the last with a custom "must be checked" rule, since the standard `required()` treats Boolean `false` as a value not as missing).
 
 ## [1.7.0] — 2026-06-02
 

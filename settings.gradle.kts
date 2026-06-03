@@ -17,6 +17,7 @@ rootProject.name = "Kformik"
 
 include(":kformik")
 include(":kformik-compose")
+include(":kformik-forms")
 include(":kformik-ksp")
 include(":examples")
 project(":examples").projectDir = file("examples")
