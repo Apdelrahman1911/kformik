@@ -2,6 +2,12 @@
 
 All notable changes are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `rememberFormik` now forwards the v1.7.0 `validateDebounceMs` and `validateAsync` parameters from `FormikConfig`. Both are appended at the end of the parameter list (binary-compatible for older positional callers) and `validateAsync` is tracked with `rememberUpdatedState` so callback identity stays fresh across recompositions. `kformik-compose/api/{jvm,android}/kformik-compose.api` baselines updated.
+
 ## [1.7.0] — 2026-06-02
 
 ### Added

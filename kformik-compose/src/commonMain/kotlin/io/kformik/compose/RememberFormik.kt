@@ -200,12 +200,25 @@ fun <V> rememberFormik(
     valuesUpdater: ValuesUpdater<V>? = null,
     onError: ((Throwable) -> Unit)? = null,
     key: Any? = Unit,
+    /**
+     * Optional debounce window (ms) applied to change-triggered validation. Mirrors
+     * [FormikConfig.validateDebounceMs]; appended at the end of the parameter list so older
+     * positional callers stay binary-compatible.
+     */
+    validateDebounceMs: Long? = null,
+    /**
+     * Optional async validator that runs only when the cheap sync layer is clean. Mirrors
+     * [FormikConfig.validateAsync]; appended at the end of the parameter list so older positional
+     * callers stay binary-compatible. Tracked with [rememberUpdatedState] like [validate].
+     */
+    validateAsync: (suspend (V) -> FormikErrors)? = null,
 ): ComposeFormik<V> {
     val scope = rememberCoroutineScope()
 
     // Always-fresh references so callbacks captured on first composition don't go stale.
     val onSubmitState = rememberUpdatedState(onSubmit)
     val validateState = rememberUpdatedState(validate)
+    val validateAsyncState = rememberUpdatedState(validateAsync)
     val onResetState = rememberUpdatedState(onReset)
     val onErrorState = rememberUpdatedState(onError)
 
@@ -214,12 +227,14 @@ fun <V> rememberFormik(
             FormikConfig(
                 initialValues = initialValues,
                 validate = { v -> validateState.value?.invoke(v) ?: FormikErrors.Empty },
+                validateAsync = { v -> validateAsyncState.value?.invoke(v) ?: FormikErrors.Empty },
                 schemaValidator = schemaValidator,
                 onSubmit = { v, actions -> onSubmitState.value(v, actions) },
                 onReset = { v, actions -> onResetState.value?.invoke(v, actions) },
                 validateOnChange = validateOnChange,
                 validateOnBlur = validateOnBlur,
                 validateOnMount = validateOnMount,
+                validateDebounceMs = validateDebounceMs,
                 enableReinitialize = enableReinitialize,
                 valuesUpdater = valuesUpdater,
                 onError = { t -> onErrorState.value?.invoke(t) },
