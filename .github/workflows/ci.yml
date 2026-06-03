@@ -33,7 +33,7 @@ jobs:
         run: |
           ./gradlew \
             :kformik:jvmTest :kformik:testDebugUnitTest :kformik:testReleaseUnitTest \
-            :kformik-compose:testReleaseUnitTest :kformik-compose:assembleRelease \
+            :kformik-compose:jvmTest :kformik-compose:testReleaseUnitTest :kformik-compose:assembleRelease \
             :kformik-forms:jvmTest :kformik-forms:testReleaseUnitTest :kformik-forms:assembleRelease \
             :kformik-ksp:test \
             :sample-android-app:assembleDebug \
@@ -72,11 +72,22 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: iOS Simulator tests
+      - name: iOS Simulator tests + compile checks for all three iOS targets
+        # `iosSimulatorArm64Test` is the only target we actually *test* on (the simulator runs on
+        # the macos-14 runner's arm64). For `iosArm64` (real device) and `iosX64` (older Intel
+        # simulator) we compile-only — catches commonMain regressions that only manifest under
+        # one of those platforms without paying the runtime cost. :kformik-compose and
+        # :kformik-forms were previously iOS-checked only at release tag time; gating PRs on
+        # iOS compile of the Compose adapter — the most-likely-to-break iOS surface — catches
+        # regressions weeks earlier.
         run: |
           ./gradlew \
             :kformik:iosSimulatorArm64Test \
+            :kformik:compileKotlinIosArm64 :kformik:compileKotlinIosX64 \
+            :kformik-compose:compileKotlinIosSimulatorArm64 \
+            :kformik-compose:compileKotlinIosArm64 :kformik-compose:compileKotlinIosX64 \
             :kformik-forms:compileKotlinIosSimulatorArm64 \
+            :kformik-forms:compileKotlinIosArm64 :kformik-forms:compileKotlinIosX64 \
             --warning-mode=all
 
       - name: Upload test reports on failure
