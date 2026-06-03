@@ -313,6 +313,37 @@ class CoverageGapsTest {
         assertEquals("DEF", getIn(null, "a.b", "DEF"))
     }
 
+    /**
+     * v1.9.0: `getIn` preserves an explicitly-stored `null` leaf instead of falling back to the
+     * default. Pre-1.9.0 the function conflated "key missing" with "key present with null value"
+     * via `current ?: default`, so any consumer reading a nullable field via getIn lost the
+     * ability to distinguish "user cleared this" from "user never set this".
+     */
+    @Test
+    fun getIn_distinguishesExplicitNull_fromMissingKey() {
+        val tree: Any? = mapOf("a" to mapOf("explicit" to null, "missingTwin" to 1))
+        // Explicit null at leaf is preserved — not coerced to default.
+        assertNull(getIn(tree, "a.explicit", "DEF"))
+        // Missing key still falls back to default.
+        assertEquals("DEF", getIn(tree, "a.absent", "DEF"))
+        // Descending THROUGH a null intermediate still fails to default — can't keep walking.
+        assertEquals("DEF", getIn(tree, "a.explicit.further", "DEF"))
+    }
+
+    /**
+     * v1.9.0: same null-vs-missing discrimination for list indexes — present-but-null preserved,
+     * out-of-range falls back to default.
+     */
+    @Test
+    fun getIn_list_distinguishesExplicitNullElement_fromOutOfRange() {
+        val tree: Any? = mapOf("xs" to listOf<Any?>("a", null, "c"))
+        assertEquals("a", getIn(tree, "xs[0]", "DEF"))
+        assertNull(getIn(tree, "xs[1]", "DEF"))          // explicit null preserved
+        assertEquals("c", getIn(tree, "xs[2]", "DEF"))
+        assertEquals("DEF", getIn(tree, "xs[5]", "DEF")) // out-of-range falls back
+        assertEquals("DEF", getIn(tree, "xs[-1]", "DEF"))// negative falls back
+    }
+
     @Test
     fun setIn_returnsSameMapWhenValueUnchanged() {
         val before = mapOf<String, Any?>("a" to 1)
