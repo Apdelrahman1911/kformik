@@ -53,15 +53,15 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.apdelrahman1911:kformik:1.8.0")
+    implementation("io.github.apdelrahman1911:kformik:1.9.0")
 
     // Optional
-    implementation("io.github.apdelrahman1911:kformik-compose:1.8.0")  // Compose Multiplatform adapter
-    implementation("io.github.apdelrahman1911:kformik-forms:1.8.0")    // Declarative Map<String, Field> form layer
+    implementation("io.github.apdelrahman1911:kformik-compose:1.9.0")  // Compose Multiplatform adapter
+    implementation("io.github.apdelrahman1911:kformik-forms:1.9.0")    // Declarative Map<String, Field> form layer
 
     // KSP processor — needs BOTH compileOnly (for @FormValues import) and ksp (to run the processor)
-    compileOnly("io.github.apdelrahman1911:kformik-ksp:1.8.0")
-    ksp("io.github.apdelrahman1911:kformik-ksp:1.8.0")
+    compileOnly("io.github.apdelrahman1911:kformik-ksp:1.9.0")
+    ksp("io.github.apdelrahman1911:kformik-ksp:1.9.0")
 }
 ```
 
@@ -210,6 +210,40 @@ friends.replace(0, "REPLACED")    // doesn't touch
 
 The rest of Formik's surface is here too: `validateOnChange` / `validateOnBlur` / `validateOnMount`, `dirty`, `isValid`, `submitCount`, `setStatus`, submit-touches-all, async submit (suspending), per-field error overrides, and `resetForm`.
 
+#### Debounced + async validation (v1.7.0+)
+
+Two `FormikConfig` knobs let you sidestep "validate fires on every keystroke" for expensive checks:
+
+```kotlin
+val form = FormikController(FormikConfig(
+    initialValues = mapOf("username" to ""),
+    validate = { v -> buildErrors {                       // cheap sync — runs every change
+        if ((v["username"] as String).isBlank()) put("username", "Required")
+    }},
+    validateAsync = { v -> buildErrors {                  // expensive — only runs if sync is clean
+        if (api.isUsernameTaken(v["username"] as String)) put("username", "Already taken")
+    }},
+    validateDebounceMs = 300L,                            // coalesce rapid changes into 1 run
+    onSubmit = { /* … */ },
+))
+```
+
+`validateAsync` is sync-then-async **circuit-broken**: a failure in the cheap sync layer skips the async pass entirely, so an empty username doesn't hit the network. Debounce only applies to change-triggered validation — blur, submit, and explicit `validateForm()` always run immediately.
+
+#### Hydration: server-side errors / pre-touched fields
+
+Constructor params on both `FormikConfig` and `rememberFormik` let you seed initial state — useful when re-rendering a form with server-returned errors after a failed submit:
+
+```kotlin
+val form = rememberFormik(
+    initialValues = serverPayload.values,
+    initialErrors = serverPayload.errors,        // FormikErrors(mapOf("email" to "Already taken"))
+    initialTouched = serverPayload.touched,      // FormikTouched(mapOf("email" to true))
+    initialStatus = serverPayload.banner,
+    onSubmit = { /* … */ },
+)
+```
+
 ## Typed values with KSP
 
 Annotate a `data class`:
@@ -305,6 +339,8 @@ The form-state code above compiles unchanged on Android, Desktop, and iOS. The o
 
 Working Android sample in [`sample-android-app/`](sample-android-app/). More patterns in [`docs/COMPOSE_USAGE.md`](docs/COMPOSE_USAGE.md).
 
+`:kformik-compose` runs a JVM-host Compose UI test rig (`runComposeUiTest`) covering `state` / `dirty` / `isValid` / `fieldState` / `enableReinitialize` — same `:kformik-compose:jvmTest` task already wired into CI; no emulator required.
+
 ## Declarative forms
 
 A higher-level layer in `kformik-forms` lets you describe the form as `Map<String, Field>` instead of writing each `OutlinedTextField` by hand. Same engine underneath; just less code at the call site:
@@ -326,7 +362,9 @@ KformikForm(
 )
 ```
 
-Renders Material 3 widgets, wires up validation, gates the submit button on `isValid && !isSubmitting`. Ten field types ship in v1: `Text`, `Email`, `Password`, `Multiline`, `Number`, `Checkbox`, `Switch`, `Select`, `Radio`, `Date`. Per-field render escape hatch via `renderOverride`, custom submit-button slot, optional debounced + async validation pass-through. Full reference in [`docs/FORMS_USAGE.md`](docs/FORMS_USAGE.md).
+Renders Material 3 widgets, wires up validation, gates the submit button on `isValid && !isSubmitting`. Ten field types ship: `Text`, `Email`, `Password`, `Multiline`, `Number`, `Checkbox`, `Switch`, `Select`, `Radio`, `Date`. Escape hatches: per-field `renderOverride`, custom `submitButton` slot, `footerSlot` for form-level error summaries, `onError` hook, server-side hydration via `initialErrors` / `initialTouched` / `initialStatus`, and pass-through for `validateDebounceMs` + `validateAsync`. Full reference in [`docs/FORMS_USAGE.md`](docs/FORMS_USAGE.md).
+
+The default renderers ship with **accessibility baked in**: `Modifier.toggleable` / `selectable` / `selectableGroup` for proper role + group announcements; an `error` text marked as a `liveRegion = LiveRegionMode.Polite` so screen readers announce newly-appearing validation errors when they land; a programmatic `stateDescription = "Required"` so TalkBack / VoiceOver announce required fields without depending on the visual `*` suffix.
 
 ## SwiftUI / iOS
 
@@ -385,19 +423,38 @@ Other example names: `nested`, `async`, `typed`, `fieldlevel`, `dependent`, `deb
 
 ```bash
 ./gradlew :kformik:allTests :kformik:iosSimulatorArm64Test
-./gradlew :kformik-compose:assembleRelease
+./gradlew :kformik-compose:jvmTest :kformik-forms:jvmTest :kformik-ksp:test
+./gradlew :kformik-compose:assembleRelease :kformik-forms:assembleRelease
 ./gradlew :sample-android-app:assembleDebug
-./gradlew publishToMavenLocal
+./gradlew apiCheck                # binary-compat baselines for every module
+./gradlew publishToMavenLocal     # signed artifacts under ~/.m2
 ```
+
+All four published modules use `kotlin.explicitApi()` strict mode — every public declaration must carry an explicit `public` / `internal` / `private` modifier and explicit return type.
 
 Maven Central release process: [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md).
 
+## What's done
+
+- **Core controller** with reactive `StateFlow<FormikState<V>>`, structured-concurrency suspend setters, single-flight submit (independent of the `isSubmitting` flag), CAS-based lock-free escape hatch (`setFormikState`), and a monotonic validation-generation guard so stale async validators can't overwrite a fresher result.
+- **Validation**: synchronous `validate`, schema DSL, async `validateAsync` with sync-then-async circuit-breaking, debounce window (`validateDebounceMs`), cross-field rules. All paths skip-on-supersede via the generation guard.
+- **Field arrays** (`form.array(path)`): `push` / `pop` / `unshift` / `insert` / `remove` / `replace` / `swap` / `move`; touched + errors stay aligned across structural mutations; throws on present-but-non-list paths; `current()` / `size()` symmetric with the mutating helpers.
+- **Compose Multiplatform adapter** (`:kformik-compose`): `rememberFormik(…)`, `ComposeFormik<V>` with per-field `fieldState(name)`, `@Composable` accessors for `state` / `dirty` / `isValid`, `enableReinitialize` baseline re-sync (all four hydration slots watched). `rememberUpdatedState` keeps `onSubmit` / `validate` / `validateAsync` / `schemaValidator` / `onReset` / `onError` fresh across recompositions. JVM-host UI test rig (`runComposeUiTest`) ships in `:kformik-compose:jvmTest`.
+- **Declarative forms layer** (`:kformik-forms`): `Map<String, Field>` → fully wired Material 3 form via `KformikForm(fields, onSubmit, …)`. Ten field types, a11y baked in (`toggleable` / `selectable` / `selectableGroup`, `liveRegion` errors, `stateDescription = "Required"`), escape hatches: `renderOverride`, `submitButton` slot, `footerSlot`, `onError`, server-side `initialErrors` / `initialTouched` / `initialStatus`, debounced + async validation pass-through.
+- **iOS / SwiftUI bridge** (`io.kformik.ios.FormikIosBridge`): Swift-friendly facade with `observe` / `snapshot` / setters / `submit` / `resetForm` / `close`. `StateSnapshot.value("user.address.city")` resolves nested paths via `MapValuesUpdater.getAt`. Caller-owned scope respected on `close()`.
+- **KSP processor** (`:kformik-ksp`, experimental): `@FormValues` → `<Name>Paths` + `<Name>Updater : ValuesUpdater<Name>`. Flat and nested `data class`es. Incremental per-file dependencies (KSP1 + KSP2).
+- **CI** (`.github/workflows/ci.yml`): every push / PR to `main` runs JVM + Android + KSP tests, full Compose UI test rig, iOS-simulator tests, `iosArm64` + `iosX64` cross-compile for all three KMP modules, `apiCheck` baselines, and verifies publication wiring via `publishToMavenLocal`.
+- **Automated release** (`.github/workflows/release.yml`): pushing a `v*` tag runs the signed pre-publish verification → Sonatype staging → `bulk/close` + state poll → `bulk/promote` to Central → `gh release create`. The promote step is gated behind a `release` GitHub environment with a required-reviewer approval (recommend self-review). Failures drop the staging repo via `bulk/drop`. `workflow_dispatch` with `dry_run = true` exercises the pipeline without publishing. See [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md).
+- **1147 tests / 0 failures** across the four modules (kformik 268 JVM + 262 Android debug + 262 Android release + 286 iOS sim, kformik-compose 20 JVM incl. 5 Compose UI tests, kformik-forms 26 JVM, kformik-ksp 23). All four published modules use `explicitApi()` strict mode. `apiCheck` baselines committed for every module/variant pair.
+
 ## What isn't done
 
-- The Compose adapter ships as a Compose Multiplatform module (Android / Desktop JVM / iOS targets). Web / WASM targets aren't built yet.
-- iOS device + Intel-simulator targets (`iosArm64`, `iosX64`) compile in CI but only `iosSimulatorArm64Test` actually runs on the macos-14 runner; on-device test execution would require a self-hosted iOS runner.
-- KSP `@FormValues` generation handles flat and nested `data class`es; `List`/`Map` properties are set by full-value replacement (no per-index typed accessor yet). Unsupported targets (non-data, sealed, abstract, generic classes) are reported with a clear error rather than miscompiled.
-- CI (`.github/workflows/ci.yml`) runs JVM + Android + KSP tests, the iOS-simulator tests, the public-ABI check, and verifies publication wiring via `publishToMavenLocal` on every push/PR to `main`. Maven Central releases are automated via `.github/workflows/release.yml`: pushing a `v*` tag runs the signed pre-publish verification → Sonatype staging → close → promote to Central, gated behind a `release` GitHub environment with a required-reviewer approval. See [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md).
+- **Web / WASM targets** for `:kformik-compose` aren't built yet (`wasmJs`/`js` not exposed).
+- **iOS on-device test execution**. `iosArm64` + `iosX64` compile in CI; only `iosSimulatorArm64Test` actually runs (macos-14 runner). On-device execution would require a self-hosted iOS runner.
+- **KSP per-index typed `List<...>` accessors**. `List`/`Map` properties are handled by full-value replacement; per-index access still uses string concatenation (`"${LoginValuesPaths.friends.\`$path\`}[0]"`). Future enhancement.
+- **`gradle/libs.versions.toml` + buildSrc convention plugin**: POM + signing config is currently duplicated across the four published modules. Working but redundant; refactor planned for a future cycle.
+- **Sealed / generic / abstract `@FormValues` targets**: rejected with a clear `KSPLogger` error rather than miscompiled. Documented as out-of-scope.
+- **`fieldOf<T>` parameterised-T element-type validation**: fundamentally limited by JVM / Native generics erasure. Documented in the KDoc with workarounds.
 
 ## Credit
 
