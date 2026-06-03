@@ -211,4 +211,50 @@ class ValidateDebounceTest {
         assertTrue(count >= 1, "blur fires normally (validateOnBlur=true by default)")
         c.close()
     }
+
+    // ────────────────── collector survives validate throw (regression for v1.8.1 hardening)
+
+    /**
+     * Pre-1.8.1, a `validate` that threw inside the debounced pipeline killed the collector for
+     * the controller's lifetime — subsequent change-triggered validations silently never fired.
+     * The fix wraps the collect body in try/catch, routing throwables to `onError` and continuing
+     * the collection.
+     */
+    @Test
+    fun debounceCollector_survivesValidateThrow_routesToOnError() = runTest {
+        var validateCalls = 0
+        var onErrorCalls = 0
+        var shouldThrow = true
+        val c = FormikController(
+            FormikConfig(
+                initialValues = mapOf<String, Any?>("name" to ""),
+                validate = { _ ->
+                    validateCalls++
+                    if (shouldThrow) {
+                        shouldThrow = false
+                        throw RuntimeException("validate boom (one-shot)")
+                    }
+                    FormikErrors.Empty
+                },
+                onSubmit = { _, _ -> },
+                validateDebounceMs = 50L,
+                onError = { onErrorCalls++ },
+                coroutineScope = this,
+            )
+        )
+
+        // First change triggers the throw via the debounced path.
+        c.setFieldValue("name", "first")
+        advanceTimeBy(100L); runCurrent()
+        assertEquals(1, validateCalls, "validate fired once for first change")
+        assertEquals(1, onErrorCalls, "validate's throw routed to onError, not propagated out")
+
+        // Second change must STILL be processed — the collector survived the throw.
+        c.setFieldValue("name", "second")
+        advanceTimeBy(100L); runCurrent()
+        assertEquals(2, validateCalls, "collector must still process subsequent changes after a throw")
+        assertEquals(1, onErrorCalls, "second change does not throw")
+
+        c.close()
+    }
 }

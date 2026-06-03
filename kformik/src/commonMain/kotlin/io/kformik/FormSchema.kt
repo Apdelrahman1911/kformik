@@ -367,19 +367,33 @@ class FieldRulesBuilder<V>(private val path: String) {
         }
     }
 
-    /** Numeric minimum. Numbers compared as `Double`. */
+    /**
+     * Numeric minimum. Values are compared as `Double`. Non-finite inputs (`NaN`, `±Infinity`)
+     * fail the rule — `NaN < x` always returns `false` regardless of `x`, which would silently
+     * pass the check otherwise. Schema-declaration-time guard: [minValue] must be finite (catches
+     * `min(Double.NaN)` and `min(Double.POSITIVE_INFINITY)` mistakes at build time).
+     */
     fun min(minValue: Number, message: String = "Must be at least $minValue") {
+        val bound = minValue.toDouble()
+        require(bound.isFinite()) { "min's bound must be a finite Number (got $minValue)" }
         rules += FieldRule(name = "min") { value, _ ->
             val n = (value as? Number)?.toDouble() ?: return@FieldRule null
-            if (n < minValue.toDouble()) message else null
+            if (!n.isFinite()) return@FieldRule message  // NaN / ±Infinity → out-of-range
+            if (n < bound) message else null
         }
     }
 
-    /** Numeric maximum. */
+    /**
+     * Numeric maximum. Same finite-only semantics as [min]: a non-finite input fails the rule;
+     * a non-finite [maxValue] throws at schema-declaration time.
+     */
     fun max(maxValue: Number, message: String = "Must be at most $maxValue") {
+        val bound = maxValue.toDouble()
+        require(bound.isFinite()) { "max's bound must be a finite Number (got $maxValue)" }
         rules += FieldRule(name = "max") { value, _ ->
             val n = (value as? Number)?.toDouble() ?: return@FieldRule null
-            if (n > maxValue.toDouble()) message else null
+            if (!n.isFinite()) return@FieldRule message
+            if (n > bound) message else null
         }
     }
 

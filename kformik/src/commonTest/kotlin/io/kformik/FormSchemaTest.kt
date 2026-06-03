@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -132,6 +133,53 @@ class FormSchemaTest {
         assertEquals("Too young", schema.validate(mapOf("age" to 12))["age"])
         assertEquals("Too old", schema.validate(mapOf("age" to 200))["age"])
         assertTrue(schema.validate(mapOf("age" to 30)).isEmpty)
+    }
+
+    // ────────── min/max non-finite input guards (v1.8.1 regression: NaN passed both)
+
+    /**
+     * `NaN < 18` and `NaN > 120` both evaluate to `false` in IEEE 754, so the pre-1.8.1 min/max
+     * implementations let `NaN` slip through silently. The fix rejects non-finite values
+     * (`NaN`, `±Infinity`) as out-of-range.
+     */
+    @Test
+    fun min_rejectsNaNInputAsOutOfRange() = runTest {
+        val schema = formSchema<Map<String, Any?>> {
+            field("score") { min(0, "out of range") }
+        }
+        assertEquals("out of range", schema.validate(mapOf<String, Any?>("score" to Double.NaN))["score"])
+    }
+
+    @Test
+    fun max_rejectsNaNInputAsOutOfRange() = runTest {
+        val schema = formSchema<Map<String, Any?>> {
+            field("score") { max(100, "out of range") }
+        }
+        assertEquals("out of range", schema.validate(mapOf<String, Any?>("score" to Double.NaN))["score"])
+    }
+
+    @Test
+    fun min_rejectsPositiveInfinityAtInput() = runTest {
+        val schema = formSchema<Map<String, Any?>> {
+            field("score") { min(0, "out of range") }
+        }
+        // +Infinity technically satisfies min(0) mathematically, but is rarely a valid form
+        // value — treat non-finite inputs as invalid for finite-range rules.
+        assertEquals("out of range", schema.validate(mapOf<String, Any?>("score" to Double.POSITIVE_INFINITY))["score"])
+    }
+
+    @Test
+    fun min_throwsAtSchemaDeclaration_whenBoundIsNonFinite() {
+        assertFailsWith<IllegalArgumentException> {
+            formSchema<Map<String, Any?>> { field("score") { min(Double.NaN) } }
+        }
+    }
+
+    @Test
+    fun max_throwsAtSchemaDeclaration_whenBoundIsNonFinite() {
+        assertFailsWith<IllegalArgumentException> {
+            formSchema<Map<String, Any?>> { field("score") { max(Double.NEGATIVE_INFINITY) } }
+        }
     }
 
     // -------------------------------------------------------------------- custom

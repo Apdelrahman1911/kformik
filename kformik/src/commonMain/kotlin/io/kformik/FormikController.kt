@@ -242,14 +242,26 @@ class FormikController<V>(
                 revalidateCurrent()
             }
         }
-        // Wire the debounced collector exactly once, only when configured.
+        // Wire the debounced collector exactly once, only when configured. The collect body's
+        // try/catch is load-bearing: without it, a throwing `validate` / `validateAsync` would
+        // propagate out of .collect, terminate the launched coroutine, and silently kill all
+        // subsequent change-validation requests for the controller's lifetime. Mirrors the
+        // exception-routing strategy of handleSubmit/handleReset.
         @OptIn(kotlinx.coroutines.FlowPreview::class)
         if (_changeValidationRequests != null) {
             val debounceMs = config.validateDebounceMs!!
             _debounceCollectorJob = scope.launch {
                 _changeValidationRequests
                     .debounce(debounceMs)
-                    .collect { (values, gen) -> runAllValidationsAndCommit(values, gen) }
+                    .collect { (values, gen) ->
+                        try {
+                            runAllValidationsAndCommit(values, gen)
+                        } catch (c: CancellationException) {
+                            throw c
+                        } catch (t: Throwable) {
+                            config.onError?.invoke(t)
+                        }
+                    }
             }
         }
     }
