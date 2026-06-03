@@ -53,6 +53,10 @@ import io.kformik.compose.rememberFormik
  *  Runs alongside the auto-built schema; useful for cross-form rules that don't fit per-field
  *  schema declarations.
  * @param validateDebounceMs / @param validateAsync forwarded to [rememberFormik].
+ * @param onError invoked when the user's [onSubmit] throws (or when any fire-and-forget setter
+ *  raised by the form fails). Without an [onError], `onSubmit` exceptions are silently swallowed
+ *  by the underlying scope. Pass a real handler (logger / Snackbar trigger / error reporter) to
+ *  surface failures.
  */
 @Composable
 public fun KformikForm(
@@ -79,6 +83,7 @@ public fun KformikForm(
     validateDebounceMs: Long? = null,
     validateAsync: (suspend (Map<String, Any?>) -> FormikErrors)? = null,
     extraValidate: (suspend (Map<String, Any?>) -> FormikErrors)? = null,
+    onError: ((Throwable) -> Unit)? = null,
 ) {
     val schema = remember(fields) { buildSchemaFrom(fields) }
     val initialValues = remember(fields) { buildInitialValuesFrom(fields) }
@@ -102,6 +107,7 @@ public fun KformikForm(
         validateOnBlur = validateOnBlur,
         validateOnMount = validateOnMount,
         enableReinitialize = enableReinitialize,
+        onError = onError,
         key = controllerKey,
         validateDebounceMs = validateDebounceMs,
         validateAsync = validateAsync,

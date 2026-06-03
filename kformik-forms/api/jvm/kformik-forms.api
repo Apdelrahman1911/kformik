@@ -126,7 +126,7 @@ public final class io/kformik/forms/KformikFieldsKt {
 
 public final class io/kformik/forms/KformikFormKt {
 	public static final fun DefaultSubmitButton (Lkotlin/jvm/functions/Function0;ZZLandroidx/compose/runtime/Composer;I)V
-	public static final fun KformikForm-qmNWa6M (Ljava/util/Map;Lkotlin/jvm/functions/Function2;Landroidx/compose/ui/Modifier;FLkotlin/jvm/functions/Function5;Lkotlin/jvm/functions/Function5;ZZZZLjava/lang/Long;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;III)V
+	public static final fun KformikForm-Jm20sog (Ljava/util/Map;Lkotlin/jvm/functions/Function2;Landroidx/compose/ui/Modifier;FLkotlin/jvm/functions/Function5;Lkotlin/jvm/functions/Function5;ZZZZLjava/lang/Long;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;III)V
 }
 
 public final class io/kformik/forms/SelectOption {
