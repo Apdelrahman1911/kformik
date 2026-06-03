@@ -45,8 +45,16 @@ internal fun buildSchemaFrom(fields: Map<String, Field>): FormSchema<Map<String,
 }
 
 /**
- * Resolve the initial values map for a declarative field set. [Field.initialValue] wins when
- * non-null; otherwise [defaultValueFor] picks a type-appropriate baseline.
+ * Resolve the initial values map for a declarative field set. The user's [Field.initialValue]
+ * wins unless it's the unset sentinel ([FieldDefaultValue], the default when the parameter is
+ * omitted) — in that case, [defaultValueFor] picks a type-appropriate baseline.
+ *
+ * Explicit `null` is preserved (`Field(initialValue = null)` stores `null`), which is the
+ * documented "no selection" path for [FieldType.Select] / [FieldType.Radio]. Pre-1.9.0 the code
+ * used `?:` and so couldn't distinguish "omitted" from "explicit null" — the documented null
+ * escape hatch silently fell back to the first option's value.
  */
 internal fun buildInitialValuesFrom(fields: Map<String, Field>): Map<String, Any?> =
-    fields.mapValues { (_, f) -> f.initialValue ?: defaultValueFor(f.type) }
+    fields.mapValues { (_, f) ->
+        if (f.initialValue === FieldDefaultValue) defaultValueFor(f.type) else f.initialValue
+    }

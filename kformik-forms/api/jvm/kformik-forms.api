@@ -43,6 +43,11 @@ public final class io/kformik/forms/Field {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class io/kformik/forms/FieldDefaultValue {
+	public static final field $stable I
+	public static final field INSTANCE Lio/kformik/forms/FieldDefaultValue;
+}
+
 public abstract class io/kformik/forms/FieldType {
 	public static final field $stable I
 }

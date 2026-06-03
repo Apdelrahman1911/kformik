@@ -70,4 +70,20 @@ class DefaultValuesTest {
         assertEquals(5, initial["yearsExperience"], "explicit initialValue overrides null default")
         assertEquals("us", initial["country"])
     }
+
+    // v1.9.0: explicit-null initialValue is distinct from the omitted/default case. Select/Radio
+    // default to the first option's value when initialValue is omitted; passing `initialValue = null`
+    // means "start with no selection" and overrides the type default.
+    @Test fun buildInitialValues_explicitNull_isPreservedAndDistinctFromOmitted() {
+        val opts = listOf(SelectOption("us", "USA"), SelectOption("eg", "Egypt"))
+        val fields = mapOf(
+            "omitted" to Field(type = FieldType.Select(opts)),                  // default → first option ("us")
+            "explicitNull" to Field(type = FieldType.Select(opts), initialValue = null),  // explicit → null
+            "explicitValue" to Field(type = FieldType.Select(opts), initialValue = "eg"), // explicit → "eg"
+        )
+        val initial = buildInitialValuesFrom(fields)
+        assertEquals("us", initial["omitted"], "omitted initialValue falls back to type default (first option)")
+        assertNull(initial["explicitNull"], "explicit null overrides type default — Select 'no selection' UX")
+        assertEquals("eg", initial["explicitValue"], "explicit value overrides type default")
+    }
 }

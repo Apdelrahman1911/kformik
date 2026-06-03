@@ -38,10 +38,13 @@ import io.kformik.FieldRulesBuilder
  * @property placeholder hint text shown inside an empty text input (no effect for non-text types).
  * @property helperText optional muted text under the widget. Distinct from validation errors,
  *  which replace it when present.
- * @property initialValue the value to seed when the form is first composed. When `null`, a
- *  default-for-type is used: `""` for text-likes, `0` / `0.0` for [FieldType.Number], `false` for
- *  [FieldType.Checkbox] / [FieldType.Switch], the first option's value for [FieldType.Select] /
- *  [FieldType.Radio], `null` for [FieldType.Date].
+ * @property initialValue the value to seed when the form is first composed. The default
+ *  ([FieldDefaultValue], the unset sentinel) means "use the per-[FieldType] default": `""` for
+ *  text-likes, `null` for [FieldType.Number] / [FieldType.Date], `false` for [FieldType.Checkbox] /
+ *  [FieldType.Switch], the first option's value for [FieldType.Select] / [FieldType.Radio].
+ *  Passing an explicit `null` is distinct from omitting the parameter — it overrides the type
+ *  default with `null` (useful for `FieldType.Select` / [FieldType.Radio] where `null` means "no
+ *  option selected", as opposed to the implicit "first option").
  * @property required when true, a `required()` rule is auto-prepended into the schema for this
  *  path **unless** [rules] already declares one (the convenience flag and explicit rule don't
  *  duplicate). Renderer also marks the label with a trailing `*`.
@@ -57,8 +60,19 @@ public data class Field(
     public val label: String? = null,
     public val placeholder: String? = null,
     public val helperText: String? = null,
-    public val initialValue: Any? = null,
+    public val initialValue: Any? = FieldDefaultValue,
     public val required: Boolean = false,
     public val disabled: Boolean = false,
     public val rules: FieldRulesBuilder<Map<String, Any?>>.() -> Unit = {},
 )
+
+/**
+ * Sentinel value used as [Field.initialValue]'s default. Distinguishes "the caller didn't pass an
+ * `initialValue`" (→ use the per-[FieldType] default in [defaultValueFor]) from "the caller passed
+ * an explicit `null`" (→ store `null` verbatim, useful for `Select`/`Radio` "no selection" UX).
+ *
+ * Consumers rarely need to reference this directly — the data class's default-argument
+ * machinery uses it under the hood. Pass `null` to mean "explicit null"; pass any concrete value
+ * to mean "this value"; omit the parameter (or pass `FieldDefaultValue`) to mean "type default".
+ */
+public object FieldDefaultValue
