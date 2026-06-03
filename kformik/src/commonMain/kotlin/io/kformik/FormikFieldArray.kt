@@ -58,10 +58,30 @@ class FieldArrayController<V> internal constructor(
         require(path.isNotBlank()) { "Field array path must not be blank" }
     }
 
-    /** Convenience: current list value at [path], or empty if unresolved or not a list. */
-    fun current(): List<Any?> = controller.valueAt(path) as? List<Any?> ?: emptyList()
+    /**
+     * Convenience: current list value at [path]. Returns an empty list when the path is
+     * **absent** (`null`); throws [IllegalStateException] when the path resolves to a
+     * **present-but-non-list** value, mirroring the mutation methods' behavior. Pre-1.9.0,
+     * non-list values silently returned an empty list — read/write asymmetry that masked typos
+     * and type-drift (a scalar at a field array path looked "empty" to read, then refused to
+     * write).
+     */
+    fun current(): List<Any?> {
+        val raw = controller.valueAt(path)
+        return when (raw) {
+            null -> emptyList()
+            is List<*> -> @Suppress("UNCHECKED_CAST") (raw as List<Any?>)
+            else -> throw IllegalStateException(
+                "FieldArray path '$path' resolves to a ${raw::class.simpleName}, not a List. " +
+                    "Check the path or the field's type."
+            )
+        }
+    }
 
-    /** Convenience: current size. Returns 0 if the path doesn't resolve to a list. */
+    /**
+     * Convenience: current size. Returns 0 when the path is absent; throws when the path
+     * resolves to a present-but-non-list value (same contract as [current]).
+     */
     fun size(): Int = current().size
 
     // ----------------------------------------------------------------------- mutations

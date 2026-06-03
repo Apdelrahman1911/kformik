@@ -162,6 +162,27 @@ class FieldArrayHardeningTest {
     }
 
     /**
+     * v1.9.0 regression: `current()` / `size()` are symmetric with the mutation methods —
+     * absent path → empty list / 0; present-but-non-list path → throws. Pre-1.9.0, read
+     * silently returned empty while write threw, which masked typos and type drift.
+     */
+    @Test
+    fun current_size_nonListPath_throwsSymmetric_withMutationMethods() = runTest {
+        val c = ctrl(this, initialValues = mapOf("notAList" to "I'm a string"))
+        assertFailsWith<IllegalStateException> { c.array("notAList").current() }
+        assertFailsWith<IllegalStateException> { c.array("notAList").size() }
+        // Mutations have always thrown on the same input — the new behavior aligns reads.
+        assertFailsWith<IllegalStateException> { c.array("notAList").push("x", shouldValidate = false) }
+    }
+
+    @Test
+    fun current_size_absentPath_returnsEmptyAndZero() = runTest {
+        val c = ctrl(this, initialValues = mapOf<String, Any?>())
+        assertEquals(emptyList<Any?>(), c.array("absent").current())
+        assertEquals(0, c.array("absent").size())
+    }
+
+    /**
      * v1.9.0: `applyArrayMutation` routes its post-mutation validation through
      * `scheduleChangeValidation`, so a debounce-configured form treats array mutations the
      * same as regular value changes — coalesced into a single validation after the debounce
