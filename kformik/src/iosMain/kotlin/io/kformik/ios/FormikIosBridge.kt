@@ -5,11 +5,13 @@ import io.kformik.FormikController
 import io.kformik.FormikErrors
 import io.kformik.FormikState
 import io.kformik.FormikSubmitHandler
+import io.kformik.MapValuesUpdater
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -81,9 +83,18 @@ import kotlin.native.ObjCName
 @OptIn(ExperimentalObjCName::class)
 class FormikIosBridge private constructor(
     val controller: FormikController<Map<String, Any?>>,
-    private val scope: CoroutineScope,
+    private val outerScope: CoroutineScope,
+    private val ownsOuterScope: Boolean,
     private val callbackDispatcher: CoroutineDispatcher,
 ) {
+    /**
+     * Bridge-owned job, child of [outerScope]'s job. All bridge-launched coroutines (observer
+     * collectors, fire-and-forget setter launches) run on a derived [scope] tied to this Job.
+     * [close] cancels [bridgeJob], which deterministically cancels all bridge-launched work
+     * regardless of whether the [outerScope] is owned by the caller or by the bridge.
+     */
+    private val bridgeJob: Job = SupervisorJob(parent = outerScope.coroutineContext[Job])
+    private val scope: CoroutineScope = CoroutineScope(outerScope.coroutineContext + bridgeJob)
 
     /** Opaque token returned by [observe]. Hold a reference until you no longer want updates. */
     @ObjCName("FormikSubscription")
@@ -147,11 +158,20 @@ class FormikIosBridge private constructor(
     fun resetForm() = controller.handleReset()
 
     /**
-     * Cancel the bridge's coroutine scope and dispose the controller. Subsequent setter calls
-     * become no-ops. Safe to call multiple times.
+     * Dispose the bridge. Always cancels bridge-launched work (observer subscriptions and any
+     * fire-and-forget setter launches) via [bridgeJob]. Additionally cancels the [outerScope]
+     * itself only when the bridge created it (i.e. the caller did NOT pass an explicit
+     * `mainScope` to [create]) — caller-provided scopes follow the caller's lifecycle, mirroring
+     * [FormikController.close]'s "caller owns the scope" rule. Without this distinction, a
+     * bridge sharing its parent scope with other coroutines would tear them all down on dismiss.
+     *
+     * Safe to call multiple times.
      */
     fun close() {
-        try { scope.cancel(CancellationException("FormikIosBridge.close()")) } catch (_: Throwable) {}
+        bridgeJob.cancel(CancellationException("FormikIosBridge.close()"))
+        if (ownsOuterScope) {
+            try { outerScope.cancel(CancellationException("FormikIosBridge.close()")) } catch (_: Throwable) {}
+        }
         controller.close()
     }
 
@@ -172,9 +192,17 @@ class FormikIosBridge private constructor(
             validateOnChange: Boolean = true,
             validateOnBlur: Boolean = true,
             validateOnMount: Boolean = false,
-            mainScope: CoroutineScope = MainScope(),
+            mainScope: CoroutineScope? = null,
             callbackDispatcher: CoroutineDispatcher = Dispatchers.Main,
         ): FormikIosBridge {
+            // null sentinel lets us distinguish "caller didn't supply a scope" (we create + own +
+            // cancel on close) from "caller supplied their own" (caller owns the scope, close()
+            // does not cancel it). The pre-1.8.1 default of `MainScope()` evaluated at the call
+            // site couldn't be distinguished from a caller-supplied scope, so close() always
+            // cancelled it — which tore down the caller's scope if they had passed one. See the
+            // [close] KDoc for the resulting policy.
+            val ownsOuterScope = mainScope == null
+            val effectiveScope = mainScope ?: MainScope()
             val config = FormikConfig(
                 initialValues = initialValues,
                 validate = validate?.let { fn -> { v -> FormikErrors(fn(v)) } },
@@ -182,9 +210,9 @@ class FormikIosBridge private constructor(
                 validateOnChange = validateOnChange,
                 validateOnBlur = validateOnBlur,
                 validateOnMount = validateOnMount,
-                coroutineScope = mainScope,
+                coroutineScope = effectiveScope,
             )
-            return FormikIosBridge(FormikController(config), mainScope, callbackDispatcher)
+            return FormikIosBridge(FormikController(config), effectiveScope, ownsOuterScope, callbackDispatcher)
         }
 
         /**
@@ -199,7 +227,7 @@ class FormikIosBridge private constructor(
             validateOnChange: Boolean = true,
             validateOnBlur: Boolean = true,
             validateOnMount: Boolean = false,
-            mainScope: CoroutineScope = MainScope(),
+            mainScope: CoroutineScope? = null,
             callbackDispatcher: CoroutineDispatcher = Dispatchers.Main,
         ): FormikIosBridge = create(
             initialValues = initialValues,
@@ -227,7 +255,13 @@ class StateSnapshot internal constructor(controller: FormikController<Map<String
     private val valid: Boolean = controller.isValid.value
 
     fun values(): Map<String, Any?> = state.values
-    fun value(name: String): Any? = state.values[name]
+    /**
+     * Read the value at [name]. Supports nested paths (`"user.address.city"`, `"items[2]"`) via
+     * the same [MapValuesUpdater] the controller uses internally; flat keys resolve as direct map
+     * lookups, so `value("email")` behaves identically to the pre-1.8.1 implementation. Returns
+     * `null` for unknown paths.
+     */
+    fun value(name: String): Any? = MapValuesUpdater.getAt(state.values, name)
     fun error(name: String): String? = state.errors[name]
     fun isTouched(name: String): Boolean = state.touched[name]
     // Mirror the controller/Compose displayError: a blank-but-present error is not surfaced.

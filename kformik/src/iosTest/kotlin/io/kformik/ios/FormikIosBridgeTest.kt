@@ -225,10 +225,64 @@ class FormikIosBridgeTest {
         b.close()
         yield()
         assertFalse(sub.isActive)
-        // Subsequent setters are no-ops (the controller scope is cancelled)
+        // Subsequent setters are no-ops (the bridge's internal scope is cancelled)
         b.setFieldValue("email", "should-be-dropped")
         yield()
         assertEquals("", b.snapshot().value("email"))
+    }
+
+    /**
+     * v1.8.1 regression: `close()` cancels bridge-launched coroutines (observers, setter
+     * launches) but DOES NOT cancel a caller-provided `mainScope` — caller-owned scopes follow
+     * the caller's lifecycle. Pre-1.8.1 the bridge unconditionally called `scope.cancel()` in
+     * `close()`, tearing down whatever else the caller had launched on the same scope.
+     */
+    @Test
+    fun close_doesNotCancelCallerProvidedScope_butDoesCancelObserver() = runTest {
+        val callerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        scopes += callerScope
+        val b = FormikIosBridge.create(
+            initialValues = mapOf("email" to ""),
+            onSubmit = { _, _ -> },
+            mainScope = callerScope,
+            callbackDispatcher = Dispatchers.Unconfined,
+        )
+        bridges += b
+        val sub = b.observe { /* no-op */ }
+        yield()
+        assertTrue(sub.isActive)
+
+        b.close()
+        yield()
+
+        // Observer subscription IS cancelled (bridge-launched work).
+        assertFalse(sub.isActive, "bridge.close() must cancel observer subscriptions")
+        // Caller's scope is NOT cancelled — they own it.
+        assertTrue(callerScope.coroutineContext[Job]!!.isActive, "bridge.close() must NOT cancel a caller-provided scope")
+    }
+
+    /**
+     * v1.8.1 regression: `StateSnapshot.value(name)` routes through `MapValuesUpdater.getAt` so
+     * nested-path lookups (`"user.address.city"`) resolve correctly. Pre-1.8.1 the snapshot did
+     * a flat `state.values[name]` map lookup, silently returning `null` for any nested key — the
+     * documented Swift `"user.email"` usage pattern was broken.
+     */
+    @Test
+    fun snapshot_value_resolvesNestedPaths() = runTest {
+        val b = newBridge(
+            initial = mapOf<String, Any?>(
+                "user" to mapOf<String, Any?>(
+                    "name" to "Aisha",
+                    "address" to mapOf<String, Any?>("city" to "Cairo"),
+                ),
+                "items" to listOf("a", "b", "c"),
+            ),
+        )
+        val s = b.snapshot()
+        assertEquals("Aisha", s.value("user.name"), "flat-nested path")
+        assertEquals("Cairo", s.value("user.address.city"), "double-nested path")
+        assertEquals("b", s.value("items[1]"), "list-index path")
+        assertEquals("Aisha", s.value("user.name"), "repeat call returns same value")
     }
 
     // ---------------------------------------------------------------------- validation
