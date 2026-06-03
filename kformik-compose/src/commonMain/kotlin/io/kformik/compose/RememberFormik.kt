@@ -276,14 +276,27 @@ fun <V> rememberFormik(
 
     if (enableReinitialize) {
         val firstPass = remember(composeFormik) { mutableStateOf(true) }
-        LaunchedEffect(composeFormik, initialValues) {
+        // Watch ALL four hydration slots, not just `initialValues`. Pre-1.9.0-final-review the
+        // LaunchedEffect key list and the reinitialize() call both included only values, so the
+        // hydrate-server-errors workflow advertised by the [initialErrors] / [initialTouched] /
+        // [initialStatus] KDoc above did nothing across recompositions — values changes alone
+        // triggered re-seeding, and even then the errors/touched/status slots collapsed to
+        // FormikInitialState's `Empty` defaults instead of the consumer's intended hydration.
+        LaunchedEffect(composeFormik, initialValues, initialErrors, initialTouched, initialStatus) {
             if (firstPass.value) {
                 firstPass.value = false
                 return@LaunchedEffect
             }
             // reinitialize() deep-equals the new baseline and early-returns when unchanged, so
             // re-running this effect is cheap/idempotent.
-            composeFormik.controller.reinitialize(FormikInitialState(values = initialValues))
+            composeFormik.controller.reinitialize(
+                FormikInitialState(
+                    values = initialValues,
+                    errors = initialErrors,
+                    touched = initialTouched,
+                    status = initialStatus,
+                )
+            )
         }
     }
 
