@@ -254,6 +254,16 @@ class FormikController<V>(
                 _changeValidationRequests
                     .debounce(debounceMs)
                     .collect { (values, gen) ->
+                        // Skip if a newer mutation has already bumped the generation past us —
+                        // a blur or another change-validation kicked off in the foreground while
+                        // we were debouncing, and its result will commit instead. Without this
+                        // check the stale run still EXECUTES the user's validate/validateAsync
+                        // (only its commit step is dropped via the gen guard inside
+                        // runAllValidationsAndCommit), which doubles network round-trips on
+                        // validateAsync-backed forms. The read is unprotected by the mutex —
+                        // benign race, the worst case is a false-pass that drops at commit-time
+                        // exactly as before.
+                        if (gen != validationGeneration) return@collect
                         try {
                             runAllValidationsAndCommit(values, gen)
                         } catch (c: CancellationException) {

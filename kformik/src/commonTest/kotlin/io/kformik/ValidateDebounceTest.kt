@@ -212,6 +212,40 @@ class ValidateDebounceTest {
         c.close()
     }
 
+    // ────────────────── blur-during-debounce skips the about-to-fire stale run (v1.9.0)
+
+    /**
+     * Pre-1.9.0, when a blur landed in the middle of a pending debounce window, the blur's
+     * foreground validation ran AND the queued debounced one ran when the timer fired. Each
+     * commit was correctly gated by `validationGeneration` (the stale debounced one dropped its
+     * commit), but the run itself still executed — wasting one validator invocation per blur.
+     * Doubles latency on `validateAsync`-backed forms (two network round-trips per blur).
+     *
+     * The collector now checks the latest generation BEFORE running the validator, so a
+     * superseded emission is skipped entirely.
+     */
+    @Test
+    fun blurDuringDebounceWindow_skipsTheStaleDebouncedRun() = runTest {
+        var calls = 0
+        val c = ctrl(this, validateDebounceMs = 100L) { _ -> calls++; FormikErrors.Empty }
+        c.setFieldValue("name", "abc")
+        advanceTimeBy(50L); runCurrent()
+        assertEquals(0, calls, "debounce timer hasn't elapsed yet")
+        // Blur during the debounce window — bumps the validation generation, runs the validator
+        // in the foreground immediately.
+        c.setFieldTouched("name", true)
+        runCurrent()
+        assertEquals(1, calls, "blur ran one validation in the foreground")
+        // Let the debounce timer fire. The queued (values, gen) is stale — the collector skips it.
+        advanceTimeBy(200L); runCurrent()
+        assertEquals(
+            1,
+            calls,
+            "stale debounced run skipped (was 2 pre-1.9.0; one wasted network round-trip on validateAsync)",
+        )
+        c.close()
+    }
+
     // ────────────────── collector survives validate throw (regression for v1.8.1 hardening)
 
     /**
