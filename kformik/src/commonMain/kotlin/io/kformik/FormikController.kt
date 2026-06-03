@@ -336,6 +336,16 @@ class FormikController<V>(
      * this throws [IllegalStateException] with an actionable message rather than a raw
      * `ClassCastException`/NPE. For an optional or possibly-absent field, use [fieldOfOrNull] or a
      * nullable type argument (`fieldOf<String?>(...)`).
+     *
+     * **Parameterized-type caveat (JVM erasure).** `reified T` preserves the outer type at
+     * runtime but NOT its type arguments. So `fieldOf<List<String>>("tags")` will accept a
+     * stored `List<Int>` without throwing — the `is T` check erases to `is List<*>`. The
+     * mismatch only surfaces when an individual element is read (an inserted-cast
+     * `ClassCastException`). If you need element-level validation, prefer
+     * `fieldOf<List<Any?>>(...)` and validate each element yourself, or write a typed
+     * `ValuesUpdater` and use [field] for untyped access. (This is a fundamental limitation of
+     * Kotlin generics on JVM/Native — fixable only with `kotlin-reflect` or a per-element walk,
+     * neither of which we want in the core dependency.)
      */
     inline fun <reified T> fieldOf(name: String): FieldBinding<T> {
         @Suppress("UNCHECKED_CAST")
