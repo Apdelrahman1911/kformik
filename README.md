@@ -265,8 +265,6 @@ tasks.register("generateKFormikTypedPaths") {
 
 The task shows up in IntelliJ / Android Studio's Gradle tool window under a **kformik** group. Run it from the IDE or `./gradlew generateKFormikTypedPaths` to refresh only the generated outputs, skipping the rest of the build.
 
-> A future release (v1.6.0+) will ship a small `kformik-gradle-plugin` that auto-registers this task — so the snippet above becomes a one-line `plugins { id("io.github.apdelrahman1911.kformik") version "..." }`. The snippet is the v1.5.0 path; both will work side by side once the plugin lands.
-
 ## Compose
 
 `kformik-compose` is a **Compose Multiplatform** module. The same `rememberFormik(…)` API works in shared `commonMain` code on:
@@ -397,9 +395,9 @@ Maven Central release process: [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.
 ## What isn't done
 
 - The Compose adapter ships as a Compose Multiplatform module (Android / Desktop JVM / iOS targets). Web / WASM targets aren't built yet.
-- iOS device target compiles but isn't exercised in CI; the iOS simulator target is.
+- iOS device + Intel-simulator targets (`iosArm64`, `iosX64`) compile in CI but only `iosSimulatorArm64Test` actually runs on the macos-14 runner; on-device test execution would require a self-hosted iOS runner.
 - KSP `@FormValues` generation handles flat and nested `data class`es; `List`/`Map` properties are set by full-value replacement (no per-index typed accessor yet). Unsupported targets (non-data, sealed, abstract, generic classes) are reported with a clear error rather than miscompiled.
-- CI (`.github/workflows/ci.yml`) runs JVM + Android + KSP tests, the iOS-simulator tests, the public-ABI check, and verifies publication wiring via `publishToMavenLocal` on every push/PR to `main`. A signed, secret-driven Maven Central **release** is not yet automated — releases are still run from a local machine (see [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md)).
+- CI (`.github/workflows/ci.yml`) runs JVM + Android + KSP tests, the iOS-simulator tests, the public-ABI check, and verifies publication wiring via `publishToMavenLocal` on every push/PR to `main`. Maven Central releases are automated via `.github/workflows/release.yml`: pushing a `v*` tag runs the signed pre-publish verification → Sonatype staging → close → promote to Central, gated behind a `release` GitHub environment with a required-reviewer approval. See [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md).
 
 ## Credit
 
