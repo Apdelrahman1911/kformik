@@ -28,7 +28,7 @@ plugins {
 }
 
 dependencies {
-    commonMainImplementation("io.github.apdelrahman1911:kformik-compose:1.5.0")
+    commonMainImplementation("io.github.apdelrahman1911:kformik-compose:1.9.0")
 }
 ```
 
