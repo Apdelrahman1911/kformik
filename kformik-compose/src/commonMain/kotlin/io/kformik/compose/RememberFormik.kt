@@ -18,6 +18,7 @@ import io.kformik.FormikInitialState
 import io.kformik.FormikResetHandler
 import io.kformik.FormikState
 import io.kformik.FormikSubmitHandler
+import io.kformik.FormikTouched
 import io.kformik.SchemaValidator
 import io.kformik.ValuesUpdater
 import kotlinx.coroutines.CoroutineScope
@@ -212,6 +213,24 @@ fun <V> rememberFormik(
      * callers stay binary-compatible. Tracked with [rememberUpdatedState] like [validate].
      */
     validateAsync: (suspend (V) -> FormikErrors)? = null,
+    /**
+     * Optional initial error map. Useful for server-side validation hydration ("this form was
+     * rendered with these errors already attached") — pre-1.9.0 the only path was constructing a
+     * raw [FormikController] yourself. Mirrors [FormikConfig.initialErrors]. Captured at first
+     * composition; subsequent changes are ignored unless [enableReinitialize] is true (which
+     * triggers a `reinitialize(FormikInitialState(…))` re-seed).
+     */
+    initialErrors: FormikErrors = FormikErrors.Empty,
+    /**
+     * Optional initial touched-flag map. Same hydration use case as [initialErrors]. Mirrors
+     * [FormikConfig.initialTouched].
+     */
+    initialTouched: FormikTouched = FormikTouched.Empty,
+    /**
+     * Optional initial form-level status (`Any?`). Same hydration use case. Mirrors
+     * [FormikConfig.initialStatus].
+     */
+    initialStatus: Any? = null,
 ): ComposeFormik<V> {
     val scope = rememberCoroutineScope()
 
@@ -232,6 +251,9 @@ fun <V> rememberFormik(
         val controller = FormikController(
             FormikConfig(
                 initialValues = initialValues,
+                initialErrors = initialErrors,
+                initialTouched = initialTouched,
+                initialStatus = initialStatus,
                 validate = { v -> validateState.value?.invoke(v) ?: FormikErrors.Empty },
                 validateAsync = { v -> validateAsyncState.value?.invoke(v) ?: FormikErrors.Empty },
                 schemaValidator = SchemaValidator { v ->

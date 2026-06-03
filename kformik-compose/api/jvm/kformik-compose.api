@@ -25,6 +25,6 @@ public final class io/kformik/compose/ComposeFormik {
 }
 
 public final class io/kformik/compose/RememberFormikKt {
-	public static final fun rememberFormik (Ljava/lang/Object;Lkotlin/jvm/functions/Function2;Lio/kformik/SchemaValidator;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZZZZLio/kformik/ValuesUpdater;Lkotlin/jvm/functions/Function1;Ljava/lang/Object;Ljava/lang/Long;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;III)Lio/kformik/compose/ComposeFormik;
+	public static final fun rememberFormik (Ljava/lang/Object;Lkotlin/jvm/functions/Function2;Lio/kformik/SchemaValidator;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZZZZLio/kformik/ValuesUpdater;Lkotlin/jvm/functions/Function1;Ljava/lang/Object;Ljava/lang/Long;Lkotlin/jvm/functions/Function2;Lio/kformik/FormikErrors;Lio/kformik/FormikTouched;Ljava/lang/Object;Landroidx/compose/runtime/Composer;III)Lio/kformik/compose/ComposeFormik;
 }
 

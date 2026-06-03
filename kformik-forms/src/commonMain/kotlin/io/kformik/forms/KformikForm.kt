@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.kformik.FormikErrors
+import io.kformik.FormikTouched
 import io.kformik.compose.ComposeFormik
 import io.kformik.compose.rememberFormik
 
@@ -57,6 +58,12 @@ import io.kformik.compose.rememberFormik
  *  raised by the form fails). Without an [onError], `onSubmit` exceptions are silently swallowed
  *  by the underlying scope. Pass a real handler (logger / Snackbar trigger / error reporter) to
  *  surface failures.
+ * @param initialErrors optional pre-populated error map (server-side validation hydration). The
+ *  errors are visible to `displayError(name)` only after the corresponding fields are touched —
+ *  pair with [initialTouched] to surface them on first render.
+ * @param initialTouched optional pre-populated touched-flag map (same hydration use case).
+ * @param initialStatus optional pre-populated form-level status (`Any?`). Free-form, mirrors
+ *  Formik's `status` field.
  */
 @Composable
 public fun KformikForm(
@@ -84,6 +91,9 @@ public fun KformikForm(
     validateAsync: (suspend (Map<String, Any?>) -> FormikErrors)? = null,
     extraValidate: (suspend (Map<String, Any?>) -> FormikErrors)? = null,
     onError: ((Throwable) -> Unit)? = null,
+    initialErrors: FormikErrors = FormikErrors.Empty,
+    initialTouched: FormikTouched = FormikTouched.Empty,
+    initialStatus: Any? = null,
 ) {
     val schema = remember(fields) { buildSchemaFrom(fields) }
     val initialValues = remember(fields) { buildInitialValuesFrom(fields) }
@@ -111,6 +121,9 @@ public fun KformikForm(
         key = controllerKey,
         validateDebounceMs = validateDebounceMs,
         validateAsync = validateAsync,
+        initialErrors = initialErrors,
+        initialTouched = initialTouched,
+        initialStatus = initialStatus,
     )
 
     val state by form.state
