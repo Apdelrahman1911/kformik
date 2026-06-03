@@ -114,7 +114,7 @@ tasks.register("generateKFormikTypedPaths") {
 
 Both flows work in parallel — they're not exclusive.
 
-> **Coming in a future release (v1.6.0+):** a small `kformik-gradle-plugin` artifact that auto-registers `generateKFormikTypedPaths` for you. Applying the plugin (`plugins { id("io.github.apdelrahman1911.kformik") version "..." }`) will replace the snippet above with a one-line `plugins { }` entry. The snippet remains the supported v1.5.0 path; both will coexist after the plugin lands.
+<!-- The `kformik-gradle-plugin` artifact that was once advertised here as "coming in v1.6.0+" was never shipped — the manual KSP-task registration shown above remains the canonical path. The promise has been removed to keep the docs accurate; a future major version may revisit the plugin idea, but it's not on any v1.x roadmap. -->
 
 ## What's supported (v1.5.0, experimental)
 
@@ -144,4 +144,3 @@ The emitter caps nested object recursion at depth 8 (a safety bound against path
 ## Roadmap
 
 - `List<...>` index-aware accessors (e.g. `LoginValuesPaths.friends[0]` resolving statically when the index is a compile-time constant).
-- A `kformik-gradle-plugin` that auto-registers the codegen task (see the note above).

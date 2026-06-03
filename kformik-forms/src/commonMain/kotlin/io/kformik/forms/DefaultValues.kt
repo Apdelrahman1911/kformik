@@ -1,8 +1,12 @@
 package io.kformik.forms
 
 /**
- * The fallback initial value used when [Field.initialValue] is `null`. Picked per [FieldType] so
- * the form starts in a sane state without forcing every consumer to spell out an `initialValue`.
+ * The fallback initial value used when [Field.initialValue] is the unset sentinel
+ * ([FieldDefaultValue], the default when the parameter is omitted). Picked per [FieldType] so the
+ * form starts in a sane state without forcing every consumer to spell out an `initialValue`.
+ *
+ * Note: an *explicit* `null` (`Field(initialValue = null)`) is preserved verbatim and does NOT
+ * trigger this fallback — see [FieldDefaultValue]'s docs for the distinction.
  *
  * - Text-like ([FieldType.Text] / [Email] / [Password] / [Multiline]) → empty string. Pairs with
  *   `required()`'s blank-string check naturally.

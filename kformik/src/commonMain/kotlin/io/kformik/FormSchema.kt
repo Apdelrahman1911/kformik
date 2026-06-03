@@ -46,10 +46,12 @@ package io.kformik
  *    can be expressed inline.
  *
  * Limitations to be aware of:
- *  - **Map/List path resolution only.** Schema path lookup uses [MapValuesUpdater]/[getIn], which
- *    understand `Map`/`List` trees. A schema attached to a typed `data class` form (with a custom
- *    [ValuesUpdater]) will read `null` for nested/typed fields. Use a `Map<String, Any?>` form, or a
- *    top-level [FormikConfig.validate] lambda, when validating typed values.
+ *  - **Typed-form path resolution requires controller wiring.** Schema path lookup uses
+ *    [MapValuesUpdater] / [getIn] by default; v1.9.0 added internal wiring via
+ *    [configureValuesUpdater] so a schema attached to a typed `data class` form (with a custom
+ *    [ValuesUpdater]) reads through the controller's updater instead of returning `null` for
+ *    every field. Standalone schema use (no [FormikController]) on a non-`Map` value type still
+ *    falls back to `getIn`, which only walks Map / List trees.
  *  - **Multi-error mode is direct-call only.** [FormikController] always uses the single-error
  *    [validate]/[validateField] path; the `failFast = false` flag and [validateAll]/[validateAllField]
  *    only take effect when you call them on the schema directly.

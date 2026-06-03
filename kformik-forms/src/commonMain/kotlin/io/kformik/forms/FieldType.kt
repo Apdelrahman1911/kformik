@@ -53,9 +53,11 @@ public sealed class FieldType {
 
     /**
      * Dropdown selector. Renders as an [androidx.compose.material3.ExposedDropdownMenuBox]. The
-     * stored value is the chosen option's [SelectOption.value] (typed as `Any`). The default
-     * stored value is the first option's value when [options] is non-empty, `null` when empty —
-     * pass an explicit `Field(initialValue = null)` to start with no selection.
+     * stored value is the chosen option's [SelectOption.value] (typed as `Any?` — see
+     * [SelectOption] for the v1.9.0 widening that lets a "no selection" placeholder option be
+     * modeled directly). The default stored value is the first option's value when [options] is
+     * non-empty, `null` when empty — pass an explicit `Field(initialValue = null)` to start
+     * with no selection regardless of the option list.
      */
     public data class Select(val options: List<SelectOption>) : FieldType()
 

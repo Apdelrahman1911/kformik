@@ -2,6 +2,82 @@
 
 All notable changes are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Ongoing v1.9.0 cycle on `harden/v1.9.0` — not yet tagged or published. Commits accumulate here; entries will be promoted to a versioned section when the release is cut. **Do NOT consider any item below a shipping promise** until v1.9.0 is tagged on `main`.
+
+### Added (forms layer)
+
+- `KformikForm.onError: ((Throwable) -> Unit)?` — surface `onSubmit` exceptions that were previously swallowed by the fire-and-forget launch.
+- `KformikForm.initialErrors` / `initialTouched` / `initialStatus` — server-side hydration of pre-existing validation state, mirrored on `rememberFormik` for typed consumers.
+- `KformikForm.footerSlot` — `@Composable (form) -> Unit` slot rendered between fields and submit button; receives the full `ComposeFormik` handle so consumers can surface form-level (non-field-bound) error summaries, status messages, or dirty indicators.
+- `FieldDefaultValue` — public sentinel singleton used as the default for `Field.initialValue`. Lets the renderers distinguish "omitted" (→ type-default via `defaultValueFor`) from "explicit null" (→ stored verbatim; the documented "no selection" path for Select / Radio).
+- `SelectOption.value` widened from `Any` to `Any?` so a `null`-valued placeholder option ("— select a country —") can be modeled directly.
+- `@Stable` on `Field`, `FieldType`, `SelectOption` — lets Compose skip renderer composition when the Field instance hasn't changed.
+
+### Added (controller / schema)
+
+- `FormSchema.configureValuesUpdater(updater)` (annotated `@InternalKformikApi`) — controller wires its own `ValuesUpdater` into the schema so per-field rules on typed `data class` forms read actual values instead of null. The `@InternalKformikApi` opt-in marker marks it as cross-module wiring rather than a stable public API.
+
+### Fixed
+
+- **`rememberFormik` `schemaValidator` no longer goes stale across recompositions.** Wrapped in `rememberUpdatedState` symmetric with the existing `validate` / `validateAsync` / `onSubmit` / `onReset` / `onError` callbacks, via a `SchemaValidator` delegate that reads from the State at call time.
+- **`FormikController.submit()` captures `submitValues` from inside the CAS lambda.** A concurrent lock-free `setFormikState` between the pre-CAS snapshot read and the commit could cause `onSubmit` to receive OLD values while published state showed NEW ones.
+- **`setFieldValue` / `setValues((V) -> V)` compute their `next` inside the CAS lambda.** Same shape as the submit fix — pre-fix, the `next` was computed outside `_state.update`, so a concurrent `setFormikState` could be clobbered.
+- **`FormikController.submit()` single-flight gate via a dedicated `submitMutex`.** Independent of the `isSubmitting` flag — `resetForm()` (or any other path that clears `isSubmitting`) can no longer let a second `submit()` race past the in-mutex check.
+- **`applyArrayMutation` routes through `scheduleChangeValidation`.** Array mutations (`push`, `pop`, `insert`, …) now respect `validateDebounceMs` like regular value changes; pre-fix they validated synchronously even when a debounce was configured.
+- **`applyArrayMutation` bumps `validationGeneration` after the transform commits.** A throwing transform (e.g. `require(idx >= 0)` in `insert(-1, …)`) no longer leaves a phantom gen that invalidates in-flight validators.
+- **`setFormikState` generation-tracking caveat documented.** Non-suspending setter can't acquire the mutex; its KDoc now warns when value mutations through this escape hatch can race with in-flight validators.
+- **`validateAsync` in-flight calls cancelled on supersede AND on `close()`.** The collector tracks `_inFlightDebouncedValidation` and cancels it on every new emission. `FormikController.close()` ALSO cancels it (not just the collector itself), so a slow `validateAsync` doesn't outlive the controller when caller-owned scopes are in play.
+- **Debounce collector skips stale runs.** Pre-fix, a blur-during-debounce-window would execute the queued validator only to discard the result at commit; the collector now checks `gen != validationGeneration` and short-circuits.
+- **Debounce collector survives a throwing `validate` / `validateAsync`.** Wraps the body in try/catch, rethrows `CancellationException`, routes other throwables to `onError`. Pre-fix a throw killed the collector for the controller's lifetime, silently stopping all subsequent change-validation.
+- **`FormSchema` reads through controller's `ValuesUpdater` for typed forms.** Pre-fix the schema's `readValue` fell through to `getIn` for non-Map values, returning null for every field; typed-form per-field rules silently passed/failed regardless of the actual data.
+- **`getIn` discriminates explicit-null from missing keys.** Walks via `containsKey` / bounds-check instead of relying on `?:`-coercion of the leaf — `getIn(mapOf("a" to null), "a", "DEF")` now returns null (not "DEF").
+- **`MapValuesUpdater.getAt` rejects empty paths symmetric with `setAt`.** Pre-fix an empty / `.` / `[]` path returned the entire values map; now throws `IllegalArgumentException` with the same message setAt has always used.
+- **`fieldOf<T>()` erasure caveat documented for parameterized T.** JVM/Native erasure can't preserve `List<String>` vs `List<Int>` at runtime; KDoc now warns honestly and points at workarounds (fundamental limitation, not fixable without `kotlin-reflect`).
+- **`FieldArrayController.current()` / `size()` throw on present-but-non-list paths.** Symmetric with `push` / `pop` / `insert` / `remove` which have always thrown — pre-fix the read path silently returned `emptyList()` / `0`.
+- **`FormSchemaBuilder.buildInitialValuesFrom` builds a nested structure for dotted/indexed paths.** Routes through `MapValuesUpdater.setAt` so `"user.email"` produces `{"user": {"email": …}}` (the controller's resolver expects); pre-fix it stored a literal `"user.email"` flat key and `valueAt("user.email")` never resolved.
+- **`min` / `max` reject non-finite inputs and bounds.** NaN comparisons silently passed both rules pre-fix; the rule body now checks `isFinite()`, and the schema-build-time `require(bound.isFinite())` catches a programming error early.
+- **`FormikController.close()` cancels in-flight debounced validation, not just the collector.** With a caller-owned scope, the previous fix only cancelled the OUTER collector — any actively-running validateAsync continued. Now both Jobs cancel.
+- **`enableReinitialize` honors `initialErrors` / `initialTouched` / `initialStatus`.** Pre-fix the LaunchedEffect watched only `initialValues` and called `reinitialize(FormikInitialState(values = initialValues))` — the other three hydration slots were ignored. Now all four are watched and forwarded.
+- **`:kformik-forms` renderer accessibility (a11y).**
+  - `DateRenderer` tap-anywhere via `interactionSource` + `PressInteraction.Release`.
+  - Checkbox / Switch rows use `Modifier.toggleable` with explicit `Role`; inner widget `onCheckedChange = null` to avoid double-dispatch.
+  - Checkbox / Switch outer Column uses `Modifier.semantics(mergeDescendants = true)` so the error text is announced inline with the toggle.
+  - Radio rows use `Modifier.selectable(role = Role.RadioButton)`, and the outer Column adds `Modifier.selectableGroup()` so TalkBack / VoiceOver announce "1 of N" group navigation.
+  - Validation error `Text` adds `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` so newly-appearing errors are spoken when they land.
+- **NumberRenderer correctness.** Display buffer + `hadFocus` to prevent canonicalization mid-typing ("0.10" no longer snaps to "0.1"); `,` → `.` normalization for decimal-comma locales; renders stored value via natural `toString()` (no asInt-driven truncation of Doubles); `defaultValueFor(FieldType.Number)` is now `null` so `required()` actually enforces "must enter a value".
+- **`MainActivity` mounts `RegistrationScreen` and `LoginScreen` via a `TabRow`.** Pre-1.8.1 only `LoginScreen` was reachable from the installed APK despite the CHANGELOG advertising `RegistrationScreen` as the headline v1.8.0 demo.
+- **iOS bridge `close()` preserves caller-owned scopes.** Tracks `ownsOuterScope` so a Swift consumer passing `viewModelScope`-equivalent gets only the bridge's own work cancelled — caller's other coroutines on the same scope continue. All bridge-launched coroutines (observers, fire-and-forget setters) cancel via a dedicated `bridgeJob: SupervisorJob` regardless of outer-scope ownership.
+- **iOS bridge `StateSnapshot.value(name)` resolves nested paths.** Routes through `MapValuesUpdater.getAt`, so `s.value("user.address.city")` works from Swift like its Compose-side equivalent.
+
+### Changed
+
+- `Field.initialValue` defaults to `FieldDefaultValue` (was `null`). Source-incompatible for code that previously passed `initialValue = null` expecting the type-default fallback — pass `Field(initialValue = FieldDefaultValue)` for the explicit type-default opt-in, or omit the parameter.
+- `FieldType.Number(...)` default value is `null` (was `0` / `0.0`). Restores `required()` enforcement on Number fields; consumers wanting a seeded zero pass `Field(initialValue = 0)`.
+
+### Build & CI
+
+- `:kformik-compose:jvmTest` added to the CI ubuntu job (only the Android variant ran pre-1.8.1).
+- iOS compile coverage expanded to `iosArm64` + `iosX64` for all three KMP modules in the CI ios job; `iosSimulatorArm64` continues to run tests.
+- `explicitApi()` (strict mode) enabled on `:kformik-forms`. The other three published modules use implicit visibility — their `explicitApi()` rollout is deferred to a follow-up cycle (see "Known limitations" below).
+- Release workflow's `.asc` count guardrail raised from `>= 46` to `>= 90` (v1.8.0 already produced 113 signatures).
+
+### Docs
+
+- README: removed the stale `kformik-gradle-plugin` "coming in v1.6.0+" forward-reference; corrected the "release is not automated" claim that was stale as of v1.7.0.
+- `docs/KSP_TYPED_PATHS.md`: same plugin-promise removed.
+- `docs/RELEASE_PROCESS.md`: version + module list brought current (was stuck at v1.5.0; missed `:kformik-forms`).
+- `DefaultValues.kt`, `FieldType.kt`, `FormSchema.kt` KDocs updated to reflect v1.9.0 semantics (sentinel-based default, Any? value, typed-form schema reads).
+
+### Known limitations (carried into v1.9.0)
+
+- **Compose UI test rig for `:kformik-compose`** — the @Composable accessors (`state`, `dirty`, `isValid`, `fieldState`) and the `enableReinitialize` / `rememberUpdatedState` callbacks still have no direct UI-tested coverage. Adding `ui-test-junit4` + `runComposeUiTest` is a follow-up task (target v1.10).
+- **`gradle/libs.versions.toml` + buildSrc convention plugin** for centralized POM / signing — currently duplicated across the four published modules. Follow-up task.
+- **`explicitApi()` rollout to `:kformik`, `:kformik-compose`, `:kformik-ksp`** — only `:kformik-forms` opted in this cycle (it was already explicit-public from day one; the others would produce larger diffs). Follow-up task.
+- **Semantic `required` marker for screen readers.** Compose has no built-in `Required` semantic property; the current visual `*` suffix reads as "asterisk" on TalkBack. Proper fix needs a Field-level API redesign — deferred to v2.0.
+- **`fieldOf<T>` element-type validation for parameterized T** — fundamentally limited by JVM / Native generics erasure. Documented in the KDoc with workarounds; not solvable without `kotlin-reflect` (not in the core deps).
+
 ## [1.8.0] — 2026-06-03
 
 ### Added

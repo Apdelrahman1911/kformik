@@ -46,9 +46,9 @@ This is the original procedure — runs everything from your local machine. Docu
 
 ## Snapshot
 
-- **Current version:** `1.5.0` (single source of truth: `gradle.properties` → `kformikVersion=…`)
+- **Current version:** `1.8.0` (single source of truth: `gradle.properties` → `kformikVersion=…`)
 - **Group:** `io.github.apdelrahman1911` (verified via GitHub identity on Maven Central; single source of truth: `gradle.properties` → `kformikGroup=…`)
-- **Modules published:** `:kformik` (KMP — JVM, Android, iosX64, iosArm64, iosSimulatorArm64), `:kformik-compose` (KMP umbrella — Android, Desktop JVM, iosX64, iosArm64, iosSimulatorArm64; Android consumers auto-resolve the `android` variant via Gradle module metadata), `:kformik-ksp` (JVM JAR)
+- **Modules published:** `:kformik` (KMP — JVM, Android, iosX64, iosArm64, iosSimulatorArm64), `:kformik-compose` (KMP umbrella — Android, Desktop JVM, iosX64, iosArm64, iosSimulatorArm64; Android consumers auto-resolve the `android` variant via Gradle module metadata), `:kformik-forms` (KMP — same target set as `:kformik-compose`; added in v1.8.0), `:kformik-ksp` (JVM JAR)
 - **Local-Maven path:** `~/.m2/repository/io/github/apdelrahman1911/<artifact>/<version>/`
 - **External target:** Sonatype **Central Publisher Portal** via the OSSRH-Staging-API bridge (`ossrh-staging-api.central.sonatype.com`) → Maven Central. The exact endpoints are configured in the root `build.gradle.kts` (`nexusPublishing { … }`), which is the source of truth.
 - **Docs jars:** Dokka HTML, wired into the `-javadoc` classifier of every publication
