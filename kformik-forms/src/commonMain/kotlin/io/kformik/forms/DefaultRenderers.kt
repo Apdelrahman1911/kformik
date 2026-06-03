@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -95,6 +96,26 @@ internal fun DefaultFieldRenderer(
 private fun displayLabel(field: Field): String? =
     field.label?.let { if (field.required) "$it *" else it }
 
+/**
+ * Programmatic "Required" marker for assistive tech. The visual "*" suffix in [displayLabel]
+ * is announced inconsistently by screen readers (TalkBack often skips it, VoiceOver reads
+ * "asterisk"), so a sighted-only marker is not sufficient.
+ *
+ * Compose has no first-class `required` semantic property; the pragmatic best fit is
+ * [stateDescription]. It is read alongside the field's role + value/label, without overriding
+ * any of them — so the user hears something like "Email, edit text, Required, empty" instead of
+ * "Email star, edit text, empty".
+ *
+ * Returns [Modifier] (the no-op) when `!field.required` so the modifier chain stays empty for
+ * non-required fields.
+ */
+private fun requiredSemantic(field: Field): Modifier =
+    if (field.required) {
+        Modifier.semantics { stateDescription = "Required" }
+    } else {
+        Modifier
+    }
+
 @Composable
 private fun supportingText(field: Field, error: String?): (@Composable () -> Unit)? {
     if (error != null) return { Text(error) }
@@ -143,6 +164,7 @@ private fun TextRenderer(
         onValueChange = { form.setFieldValue(name, it) },
         modifier = Modifier
             .fillMaxWidth()
+            .then(requiredSemantic(field))
             .then(blurTouches(form, name)),
         enabled = !field.disabled,
         label = displayLabel(field)?.let { { Text(it) } },
@@ -202,6 +224,7 @@ private fun NumberRenderer(
         },
         modifier = Modifier
             .fillMaxWidth()
+            .then(requiredSemantic(field))
             .onFocusChanged { fs ->
                 if (fs.isFocused) {
                     hadFocus = true
@@ -247,15 +270,17 @@ private fun CheckboxRenderer(
     Column(modifier = Modifier.semantics(mergeDescendants = true) {}) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.toggleable(
-                value = checked,
-                enabled = !field.disabled,
-                role = Role.Checkbox,
-                onValueChange = { newChecked ->
-                    form.setFieldValue(name, newChecked)
-                    form.setFieldTouched(name, true)
-                },
-            ),
+            modifier = Modifier
+                .then(requiredSemantic(field))
+                .toggleable(
+                    value = checked,
+                    enabled = !field.disabled,
+                    role = Role.Checkbox,
+                    onValueChange = { newChecked ->
+                        form.setFieldValue(name, newChecked)
+                        form.setFieldTouched(name, true)
+                    },
+                ),
         ) {
             Checkbox(
                 checked = checked,
@@ -292,6 +317,7 @@ private fun SwitchRenderer(
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier
                 .fillMaxWidth()
+                .then(requiredSemantic(field))
                 .toggleable(
                     value = checked,
                     enabled = !field.disabled,
@@ -343,6 +369,7 @@ private fun SelectRenderer(
             onValueChange = { /* read-only — commits happen via DropdownMenuItem.onClick */ },
             modifier = Modifier
                 .fillMaxWidth()
+                .then(requiredSemantic(field))
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = !field.disabled),
             readOnly = true,
             enabled = !field.disabled,
@@ -395,7 +422,11 @@ private fun RadioRenderer(
     // mergeDescendants here so each option stays independently focusable for keyboard /
     // swipe navigation. The error Text remains a polite live region so a newly-appearing
     // validation error is announced when it lands.
-    Column(modifier = Modifier.selectableGroup()) {
+    Column(
+        modifier = Modifier
+            .then(requiredSemantic(field))
+            .selectableGroup(),
+    ) {
         displayLabel(field)?.let { Text(it) }
         options.forEach { option ->
             val selected = option.value == currentValue
@@ -471,7 +502,9 @@ private fun DateRenderer(
     OutlinedTextField(
         value = current.orEmpty(),
         onValueChange = { /* read-only */ },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(requiredSemantic(field)),
         readOnly = true,
         enabled = !field.disabled,
         label = displayLabel(field)?.let { { Text(it) } },
