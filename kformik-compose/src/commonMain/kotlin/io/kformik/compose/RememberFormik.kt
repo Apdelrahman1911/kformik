@@ -219,6 +219,12 @@ fun <V> rememberFormik(
     val onSubmitState = rememberUpdatedState(onSubmit)
     val validateState = rememberUpdatedState(validate)
     val validateAsyncState = rememberUpdatedState(validateAsync)
+    // schemaValidator is also wrapped so an inline schema that closes over changing state (e.g.
+    // `formSchema { field("email") { minLength(minLenVar) } }` where minLenVar is a State) picks
+    // up the latest captures across recompositions. Without this the controller silently keeps the
+    // first-composition schema instance — asymmetric with validate / validateAsync, which already
+    // route through rememberUpdatedState.
+    val schemaValidatorState = rememberUpdatedState(schemaValidator)
     val onResetState = rememberUpdatedState(onReset)
     val onErrorState = rememberUpdatedState(onError)
 
@@ -228,7 +234,9 @@ fun <V> rememberFormik(
                 initialValues = initialValues,
                 validate = { v -> validateState.value?.invoke(v) ?: FormikErrors.Empty },
                 validateAsync = { v -> validateAsyncState.value?.invoke(v) ?: FormikErrors.Empty },
-                schemaValidator = schemaValidator,
+                schemaValidator = SchemaValidator { v ->
+                    schemaValidatorState.value?.validate(v) ?: FormikErrors.Empty
+                },
                 onSubmit = { v, actions -> onSubmitState.value(v, actions) },
                 onReset = { v, actions -> onResetState.value?.invoke(v, actions) },
                 validateOnChange = validateOnChange,
