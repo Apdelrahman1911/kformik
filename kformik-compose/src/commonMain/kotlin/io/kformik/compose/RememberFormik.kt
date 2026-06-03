@@ -67,8 +67,8 @@ import kotlinx.coroutines.launch
  * [rememberFormik]).
  */
 @Stable
-class ComposeFormik<V> internal constructor(
-    val controller: FormikController<V>,
+public class ComposeFormik<V> internal constructor(
+    public val controller: FormikController<V>,
     private val scope: CoroutineScope,
 ) {
     /**
@@ -86,15 +86,15 @@ class ComposeFormik<V> internal constructor(
 
 
     /** Live form state — observe with `form.state.value` from a composable. */
-    val state: State<FormikState<V>>
+    public val state: State<FormikState<V>>
         @Composable get() = controller.state.collectAsState()
 
     /** `true` if the current values differ from the initial baseline. */
-    val dirty: State<Boolean>
+    public val dirty: State<Boolean>
         @Composable get() = controller.dirty.collectAsState()
 
     /** `true` if `state.errors` is empty. */
-    val isValid: State<Boolean>
+    public val isValid: State<Boolean>
         @Composable get() = controller.isValid.collectAsState()
 
     /**
@@ -117,55 +117,55 @@ class ComposeFormik<V> internal constructor(
      * ```
      */
     @Composable
-    fun fieldState(name: String): State<FieldBinding<Any?>> {
+    public fun fieldState(name: String): State<FieldBinding<Any?>> {
         val flow = remember(name) { controller.fieldFlow(name) }
         return flow.collectAsState()
     }
 
     /** Typed snapshot read of the value at [name] (delegates to [FormikController.fieldOf]). */
-    inline fun <reified T> valueOf(name: String): T = controller.fieldOf<T>(name).value
+    inline public fun <reified T> valueOf(name: String): T = controller.fieldOf<T>(name).value
 
     // ------------------------------------------------------------------- snapshot accessors
 
     /** Snapshot read of the value at [name]. Safe to call from a composable. */
-    fun value(name: String): Any? = controller.valueAt(name)
+    public fun value(name: String): Any? = controller.valueAt(name)
 
     /** Snapshot read of the error at [name]. */
-    fun error(name: String): String? = controller.errorAt(name)
+    public fun error(name: String): String? = controller.errorAt(name)
 
     /** Snapshot read of the touched flag at [name]. */
-    fun isTouched(name: String): Boolean = controller.touchedAt(name)
+    public fun isTouched(name: String): Boolean = controller.touchedAt(name)
 
     /** Convenience: `error(name)` if `isTouched(name)`, else `null`. Mirrors `<ErrorMessage>`. */
-    fun displayError(name: String): String? = if (isTouched(name)) error(name) else null
+    public fun displayError(name: String): String? = if (isTouched(name)) error(name) else null
 
     // ------------------------------------------------------------------- fire-and-forget setters
 
-    fun setFieldValue(name: String, value: Any?, shouldValidate: Boolean? = null) {
+    public fun setFieldValue(name: String, value: Any?, shouldValidate: Boolean? = null) {
         scope.launch { controller.setFieldValue(name, value, shouldValidate) }
     }
 
-    fun setFieldValue(name: String, updater: (Any?) -> Any?, shouldValidate: Boolean? = null) {
+    public fun setFieldValue(name: String, updater: (Any?) -> Any?, shouldValidate: Boolean? = null) {
         scope.launch { controller.setFieldValue(name, updater, shouldValidate) }
     }
 
-    fun setFieldTouched(name: String, isTouched: Boolean = true, shouldValidate: Boolean? = null) {
+    public fun setFieldTouched(name: String, isTouched: Boolean = true, shouldValidate: Boolean? = null) {
         scope.launch { controller.setFieldTouched(name, isTouched, shouldValidate) }
     }
 
-    fun setFieldError(name: String, message: String?) = controller.setFieldError(name, message)
-    fun setStatus(status: Any?) = controller.setStatus(status)
-    fun setSubmitting(isSubmitting: Boolean) = controller.setSubmitting(isSubmitting)
-    fun setErrors(errors: FormikErrors) = controller.setErrors(errors)
+    public fun setFieldError(name: String, message: String?): Unit = controller.setFieldError(name, message)
+    public fun setStatus(status: Any?): Unit = controller.setStatus(status)
+    public fun setSubmitting(isSubmitting: Boolean): Unit = controller.setSubmitting(isSubmitting)
+    public fun setErrors(errors: FormikErrors): Unit = controller.setErrors(errors)
 
-    fun submit() = controller.handleSubmit()
-    fun resetForm() = controller.handleReset()
+    public fun submit(): Unit = controller.handleSubmit()
+    public fun resetForm(): Unit = controller.handleReset()
 
     /**
      * Run a suspend block on the form's scope — handy for `onClick = { form.launch { … } }`
      * patterns that need access to `actions: FormikActions<V>`.
      */
-    fun launch(block: suspend FormikActions<V>.() -> Unit) {
+    public fun launch(block: suspend FormikActions<V>.() -> Unit) {
         scope.launch { with(controller) { block(controller) } }
     }
 }
@@ -188,7 +188,7 @@ class ComposeFormik<V> internal constructor(
  * snapshot is preserved. Changing [key] forces a full rebuild (discarding user edits).
  */
 @Composable
-fun <V> rememberFormik(
+public fun <V> rememberFormik(
     initialValues: V,
     validate: (suspend (V) -> FormikErrors)? = null,
     schemaValidator: SchemaValidator<V>? = null,

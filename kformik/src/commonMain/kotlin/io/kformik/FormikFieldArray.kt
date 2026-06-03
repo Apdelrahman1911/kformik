@@ -49,9 +49,9 @@ package io.kformik
  *
  * @param V the form's values type.
  */
-class FieldArrayController<V> internal constructor(
+public class FieldArrayController<V> internal constructor(
     private val controller: FormikController<V>,
-    val path: String,
+    public val path: String,
 ) {
 
     init {
@@ -66,7 +66,7 @@ class FieldArrayController<V> internal constructor(
      * and type-drift (a scalar at a field array path looked "empty" to read, then refused to
      * write).
      */
-    fun current(): List<Any?> {
+    public fun current(): List<Any?> {
         val raw = controller.valueAt(path)
         return when (raw) {
             null -> emptyList()
@@ -82,12 +82,12 @@ class FieldArrayController<V> internal constructor(
      * Convenience: current size. Returns 0 when the path is absent; throws when the path
      * resolves to a present-but-non-list value (same contract as [current]).
      */
-    fun size(): Int = current().size
+    public fun size(): Int = current().size
 
     // ----------------------------------------------------------------------- mutations
 
     /** Append [value] to the end of the array. */
-    suspend fun push(value: Any?, shouldValidate: Boolean? = null) {
+    suspend public fun push(value: Any?, shouldValidate: Boolean? = null) {
         updateValues(
             fn = { it + value },
             alterTouched = false,
@@ -97,7 +97,7 @@ class FieldArrayController<V> internal constructor(
     }
 
     /** Prepend [value] to the beginning of the array. Returns the new length. */
-    suspend fun unshift(value: Any?, shouldValidate: Boolean? = null): Int {
+    suspend public fun unshift(value: Any?, shouldValidate: Boolean? = null): Int {
         var newSize = 0
         updateValues(
             fn = { list -> (listOf<Any?>(value) + list).also { newSize = it.size } },
@@ -110,7 +110,7 @@ class FieldArrayController<V> internal constructor(
     }
 
     /** Remove the last element and return it. Returns null if the array is empty or absent. */
-    suspend fun pop(shouldValidate: Boolean? = null): Any? {
+    suspend public fun pop(shouldValidate: Boolean? = null): Any? {
         var popped: Any? = null
         updateValues(
             fn = { list ->
@@ -131,7 +131,7 @@ class FieldArrayController<V> internal constructor(
     }
 
     /** Insert [value] at [index]. Throws if [index] is outside `[0, size]`. */
-    suspend fun insert(index: Int, value: Any?, shouldValidate: Boolean? = null) {
+    suspend public fun insert(index: Int, value: Any?, shouldValidate: Boolean? = null) {
         updateValues(
             fn = { list ->
                 require(index in 0..list.size) { "insert index $index out of bounds [0, ${list.size}]" }
@@ -145,7 +145,7 @@ class FieldArrayController<V> internal constructor(
     }
 
     /** Remove the element at [index] and return it. Throws if [index] is out of bounds. */
-    suspend fun remove(index: Int, shouldValidate: Boolean? = null): Any? {
+    suspend public fun remove(index: Int, shouldValidate: Boolean? = null): Any? {
         var removed: Any? = null
         updateValues(
             fn = { list ->
@@ -164,7 +164,7 @@ class FieldArrayController<V> internal constructor(
     }
 
     /** Replace the element at [index] with [value]. Throws if [index] is out of bounds. */
-    suspend fun replace(index: Int, value: Any?, shouldValidate: Boolean? = null) {
+    suspend public fun replace(index: Int, value: Any?, shouldValidate: Boolean? = null) {
         updateValues(
             fn = { list ->
                 require(index in list.indices) { "replace index $index out of bounds [0, ${list.size - 1}]" }
@@ -177,7 +177,7 @@ class FieldArrayController<V> internal constructor(
     }
 
     /** Swap elements at [indexA] and [indexB]. Throws if either index is out of bounds. */
-    suspend fun swap(indexA: Int, indexB: Int, shouldValidate: Boolean? = null) {
+    suspend public fun swap(indexA: Int, indexB: Int, shouldValidate: Boolean? = null) {
         updateValues(
             fn = { list ->
                 require(indexA in list.indices) { "swap indexA $indexA out of bounds" }
@@ -204,7 +204,7 @@ class FieldArrayController<V> internal constructor(
     }
 
     /** Move the element at [from] to [to]. Throws if either index is out of bounds. */
-    suspend fun move(from: Int, to: Int, shouldValidate: Boolean? = null) {
+    suspend public fun move(from: Int, to: Int, shouldValidate: Boolean? = null) {
         updateValues(
             fn = { list ->
                 require(from in list.indices) { "move from $from out of bounds" }
@@ -343,5 +343,5 @@ class FieldArrayController<V> internal constructor(
  * Return a [FieldArrayController] for the array at [path]. The path must resolve (or be expected
  * to resolve) to a `List<Any?>` inside the form's values.
  */
-fun <V> FormikController<V>.array(path: String): FieldArrayController<V> =
+public fun <V> FormikController<V>.array(path: String): FieldArrayController<V> =
     FieldArrayController(this, path)

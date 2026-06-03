@@ -13,7 +13,7 @@ import io.kformik.internal.PathParser
  *  - **Typed `data class` values**: write a hand-rolled `when`-based updater. Compact
  *    (one-time, ~10–20 lines for most forms) and explicit.
  */
-interface ValuesUpdater<V> {
+public interface ValuesUpdater<V> {
     /**
      * Read the value at [path]. Returns null if missing or unresolved.
      *
@@ -22,10 +22,10 @@ interface ValuesUpdater<V> {
      * not `mutableListOf`/`mutableMapOf`). Mutating a returned object corrupts internal state and
      * will not emit a new state to observers.
      */
-    fun getAt(values: V, path: String): Any?
+    public fun getAt(values: V, path: String): Any?
 
     /** Return a copy of [values] with [path] set to [value]. */
-    fun setAt(values: V, path: String, value: Any?): V
+    public fun setAt(values: V, path: String, value: Any?): V
 
     /**
      * Return every leaf path inside [values] (in Formik-style dot/bracket notation).
@@ -40,7 +40,7 @@ interface ValuesUpdater<V> {
      * to enumerate fields — may legitimately return only the registered paths, which is what
      * the controller falls back to.)
      */
-    fun leafPaths(values: V): Set<String> = emptySet()
+    public fun leafPaths(values: V): Set<String> = emptySet()
 }
 
 /**
@@ -68,7 +68,7 @@ interface ValuesUpdater<V> {
  *    matching the graceful handling of non-numeric segments.
  */
 @Suppress("UNCHECKED_CAST")
-object MapValuesUpdater : ValuesUpdater<Map<String, Any?>> {
+public object MapValuesUpdater : ValuesUpdater<Map<String, Any?>> {
 
     override fun getAt(values: Map<String, Any?>, path: String): Any? {
         val segments = PathParser.parse(path)
@@ -242,7 +242,7 @@ object MapValuesUpdater : ValuesUpdater<Map<String, Any?>> {
  * For real typed (`data class`) values, supply a hand-written [ValuesUpdater] or the KSP-generated
  * `<Name>Updater`; for `Map<String, Any?>` values use [MapValuesUpdater].
  */
-class FlatTopLevelUpdater<V> : ValuesUpdater<V> {
+public class FlatTopLevelUpdater<V> : ValuesUpdater<V> {
     override fun getAt(values: V, path: String): Any? = throw UnsupportedOperationException(
         "FlatTopLevelUpdater cannot read field '$path' — supply a real ValuesUpdater"
     )

@@ -61,7 +61,7 @@ package io.kformik
  * to a path. Each builder rule registers a stable [FieldRule.name] (`"required"`, `"email"`,
  * `"minLength"`, …) which makes introspection deterministic.
  */
-data class FormFieldInfo(
+data public class FormFieldInfo(
     val path: String,
     val rules: List<String>,
 ) {
@@ -69,7 +69,7 @@ data class FormFieldInfo(
     val isRequired: Boolean get() = "required" in rules
 }
 
-class FormSchema<V> internal constructor(
+public class FormSchema<V> internal constructor(
     private val perField: Map<String, List<FieldRule<V>>>,
     private val crossField: List<suspend (V) -> FormikErrors>,
     /**
@@ -122,7 +122,7 @@ class FormSchema<V> internal constructor(
      *
      * Cross-field rules append into the result map's path entries.
      */
-    suspend fun validateAll(values: V): Map<String, List<String>> {
+    suspend public fun validateAll(values: V): Map<String, List<String>> {
         val out = LinkedHashMap<String, MutableList<String>>()
         for ((path, rules) in perField) {
             val value = readValue(values, path)
@@ -150,7 +150,7 @@ class FormSchema<V> internal constructor(
      * Validate just one path. Used by [FormikController.validateField]. Returns the first error
      * (or null if all rules pass). For multi-error per-field validation, call [validateAllField].
      */
-    suspend fun validateField(values: V, path: String): String? {
+    suspend public fun validateField(values: V, path: String): String? {
         val rules = perField[path] ?: return null
         val value = readValue(values, path)
         for (rule in rules) {
@@ -168,7 +168,7 @@ class FormSchema<V> internal constructor(
      * first-failing message on the same path, matching the cross-merges-last precedence of the full
      * [validate] (so `validateField` and `validateForm` agree on the committed error for a path).
      */
-    suspend fun validateFieldIncludingCross(values: V, path: String): String? {
+    suspend public fun validateFieldIncludingCross(values: V, path: String): String? {
         var msg: String? = perField[path]?.let { rules ->
             val value = readValue(values, path)
             var found: String? = null
@@ -189,7 +189,7 @@ class FormSchema<V> internal constructor(
      * Multi-error single-field validation. Returns every failing rule's message for [path], or an
      * empty list if all pass / the path is unknown. Honors the per-field `failFast` flag.
      */
-    suspend fun validateAllField(values: V, path: String): List<String> {
+    suspend public fun validateAllField(values: V, path: String): List<String> {
         val rules = perField[path] ?: return emptyList()
         val value = readValue(values, path)
         val short = fieldFailFast(path)
@@ -203,24 +203,24 @@ class FormSchema<V> internal constructor(
     }
 
     /** Returns true if any rules are configured for [path]. */
-    fun hasField(path: String): Boolean = perField.containsKey(path)
+    public fun hasField(path: String): Boolean = perField.containsKey(path)
 
     /** Returns the configured paths. Useful for introspection / test-driven schemas. */
-    fun fields(): Set<String> = perField.keys
+    public fun fields(): Set<String> = perField.keys
 
     /**
      * Returns metadata for [path] (the registered rule names) or `null` if the path has no
      * configured rules. Use [FormFieldInfo.isRequired] to check for a `required` rule.
      */
-    fun fieldInfo(path: String): FormFieldInfo? = perField[path]?.let { rules ->
+    public fun fieldInfo(path: String): FormFieldInfo? = perField[path]?.let { rules ->
         FormFieldInfo(path = path, rules = rules.map { it.name })
     }
 
     /** Returns true if [path] has a `required` rule. */
-    fun isRequired(path: String): Boolean = perField[path]?.any { it.name == "required" } == true
+    public fun isRequired(path: String): Boolean = perField[path]?.any { it.name == "required" } == true
 
     /** Returns the set of paths that have a `required` rule. */
-    fun requiredFields(): Set<String> = perField.entries
+    public fun requiredFields(): Set<String> = perField.entries
         .asSequence()
         .filter { (_, rules) -> rules.any { it.name == "required" } }
         .map { it.key }
@@ -254,7 +254,7 @@ class FormSchema<V> internal constructor(
      * for typed values; for `Map<String, Any?>` forms the default works fine without it.
      */
     @InternalKformikApi
-    fun configureValuesUpdater(updater: ValuesUpdater<V>): FormSchema<V> = apply {
+    public fun configureValuesUpdater(updater: ValuesUpdater<V>): FormSchema<V> = apply {
         this.configuredUpdater = updater
     }
 
@@ -287,9 +287,9 @@ class FormSchema<V> internal constructor(
 public annotation class InternalKformikApi
 
 /** A single validation rule attached to a path. */
-class FieldRule<V> internal constructor(
-    val name: String,
-    val check: suspend (value: Any?, allValues: V) -> String?,
+public class FieldRule<V> internal constructor(
+    public val name: String,
+    public val check: suspend (value: Any?, allValues: V) -> String?,
 )
 
 // ====================================================================== DSL builders
@@ -310,7 +310,7 @@ class FieldRule<V> internal constructor(
  * }
  * ```
  */
-inline fun <V> formSchema(
+inline public fun <V> formSchema(
     failFast: Boolean = true,
     block: FormSchemaBuilder<V>.() -> Unit,
 ): FormSchema<V> {
@@ -319,7 +319,7 @@ inline fun <V> formSchema(
     return builder.build()
 }
 
-class FormSchemaBuilder<V> @PublishedApi internal constructor(
+public class FormSchemaBuilder<V> @PublishedApi internal constructor(
     @PublishedApi internal val schemaFailFast: Boolean = true,
 ) {
     private val fields: MutableMap<String, MutableList<FieldRule<V>>> = LinkedHashMap()
@@ -333,7 +333,7 @@ class FormSchemaBuilder<V> @PublishedApi internal constructor(
      * @param failFast When non-null, overrides the schema-level `failFast` for this field. Pass
      * `false` to collect every failing rule (see [FormSchema.validateAll] / [validateAllField]).
      */
-    fun field(
+    public fun field(
         path: String,
         failFast: Boolean? = null,
         block: FieldRulesBuilder<V>.() -> Unit,
@@ -349,7 +349,7 @@ class FormSchemaBuilder<V> @PublishedApi internal constructor(
      * Register a cross-field rule. The lambda receives the full values object and returns errors
      * to merge in. Empty errors means "no cross-field issue."
      */
-    fun cross(rule: suspend (V) -> FormikErrors) {
+    public fun cross(rule: suspend (V) -> FormikErrors) {
         crossField.add(rule)
     }
 
@@ -362,11 +362,11 @@ class FormSchemaBuilder<V> @PublishedApi internal constructor(
     )
 }
 
-class FieldRulesBuilder<V>(private val path: String) {
+public class FieldRulesBuilder<V>(private val path: String) {
     private val rules: MutableList<FieldRule<V>> = ArrayList()
 
     /** Reject `null`, empty strings, and empty lists. Custom [message] defaults to "Required". */
-    fun required(message: String = "Required") {
+    public fun required(message: String = "Required") {
         rules += FieldRule(name = "required") { value, _ ->
             val isMissing = when (value) {
                 null -> true
@@ -380,7 +380,7 @@ class FieldRulesBuilder<V>(private val path: String) {
     }
 
     /** Minimum length for `String` / `Collection` / `Map`. */
-    fun minLength(min: Int, message: String = "Must be at least $min characters") {
+    public fun minLength(min: Int, message: String = "Must be at least $min characters") {
         rules += FieldRule(name = "minLength") { value, _ ->
             val len = lengthOf(value)
             if (len != null && len < min) message else null
@@ -388,7 +388,7 @@ class FieldRulesBuilder<V>(private val path: String) {
     }
 
     /** Maximum length for `String` / `Collection` / `Map`. */
-    fun maxLength(max: Int, message: String = "Must be at most $max characters") {
+    public fun maxLength(max: Int, message: String = "Must be at most $max characters") {
         rules += FieldRule(name = "maxLength") { value, _ ->
             val len = lengthOf(value)
             if (len != null && len > max) message else null
@@ -400,7 +400,7 @@ class FieldRulesBuilder<V>(private val path: String) {
      * A blank/absent value passes (combine with [required] to forbid it), so an optional email
      * field left empty is not flagged — matching Yup's skip-on-empty and [required]'s isBlank rule.
      */
-    fun email(message: String = "Invalid email") {
+    public fun email(message: String = "Invalid email") {
         rules += FieldRule(name = "email") { value, _ ->
             val s = value as? String ?: return@FieldRule null
             if (s.isBlank()) return@FieldRule null
@@ -412,7 +412,7 @@ class FieldRulesBuilder<V>(private val path: String) {
      * Custom regex match. The [pattern] must be a valid [Regex]. A blank/absent value passes
      * (combine with [required] to forbid it), consistent with [email].
      */
-    fun pattern(pattern: Regex, message: String = "Does not match pattern") {
+    public fun pattern(pattern: Regex, message: String = "Does not match pattern") {
         rules += FieldRule(name = "pattern") { value, _ ->
             val s = value as? String ?: return@FieldRule null
             if (s.isBlank()) return@FieldRule null
@@ -426,7 +426,7 @@ class FieldRulesBuilder<V>(private val path: String) {
      * pass the check otherwise. Schema-declaration-time guard: [minValue] must be finite (catches
      * `min(Double.NaN)` and `min(Double.POSITIVE_INFINITY)` mistakes at build time).
      */
-    fun min(minValue: Number, message: String = "Must be at least $minValue") {
+    public fun min(minValue: Number, message: String = "Must be at least $minValue") {
         val bound = minValue.toDouble()
         require(bound.isFinite()) { "min's bound must be a finite Number (got $minValue)" }
         rules += FieldRule(name = "min") { value, _ ->
@@ -440,7 +440,7 @@ class FieldRulesBuilder<V>(private val path: String) {
      * Numeric maximum. Same finite-only semantics as [min]: a non-finite input fails the rule;
      * a non-finite [maxValue] throws at schema-declaration time.
      */
-    fun max(maxValue: Number, message: String = "Must be at most $maxValue") {
+    public fun max(maxValue: Number, message: String = "Must be at most $maxValue") {
         val bound = maxValue.toDouble()
         require(bound.isFinite()) { "max's bound must be a finite Number (got $maxValue)" }
         rules += FieldRule(name = "max") { value, _ ->
@@ -454,12 +454,12 @@ class FieldRulesBuilder<V>(private val path: String) {
      * Custom rule. Return a non-null message to fail, or null to pass. The full values object is
      * passed as the second argument for cross-field comparisons.
      */
-    fun custom(name: String = "custom", rule: suspend (value: Any?, allValues: V) -> String?) {
+    public fun custom(name: String = "custom", rule: suspend (value: Any?, allValues: V) -> String?) {
         rules += FieldRule(name = name, check = rule)
     }
 
     /** Short-form custom rule that only inspects the value. */
-    fun customValue(name: String = "custom", rule: suspend (value: Any?) -> String?) {
+    public fun customValue(name: String = "custom", rule: suspend (value: Any?) -> String?) {
         rules += FieldRule(name = name) { value, _ -> rule(value) }
     }
 
@@ -473,7 +473,7 @@ class FieldRulesBuilder<V>(private val path: String) {
         else -> null
     }
 
-    companion object {
+    companion public object {
         // Pragmatic email regex: one '@', one '.' in the domain, no whitespace.
         private val EMAIL_REGEX = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
     }

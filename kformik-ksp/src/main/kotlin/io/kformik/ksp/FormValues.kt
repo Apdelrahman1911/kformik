@@ -38,4 +38,4 @@ package io.kformik.ksp
  */
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.SOURCE)
-annotation class FormValues
+annotation public class FormValues

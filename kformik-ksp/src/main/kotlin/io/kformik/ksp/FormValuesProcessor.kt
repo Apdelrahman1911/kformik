@@ -62,7 +62,7 @@ import com.google.devtools.ksp.symbol.Variance
  * class with no primary constructor) are reported via the KSP logger and skipped, rather than
  * silently emitting code that fails to compile.
  */
-class FormValuesProcessor(private val env: SymbolProcessorEnvironment) : SymbolProcessor {
+public class FormValuesProcessor(private val env: SymbolProcessorEnvironment) : SymbolProcessor {
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
         val candidates = resolver.getSymbolsWithAnnotation(FormValues::class.qualifiedName!!)
@@ -371,7 +371,7 @@ class FormValuesProcessor(private val env: SymbolProcessorEnvironment) : SymbolP
     }
 }
 
-class FormValuesProcessorProvider : SymbolProcessorProvider {
+public class FormValuesProcessorProvider : SymbolProcessorProvider {
     override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor =
         FormValuesProcessor(environment)
 }

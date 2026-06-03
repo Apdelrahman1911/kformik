@@ -13,6 +13,11 @@ plugins {
 kotlin {
     jvmToolchain(17)
 
+    // Strict explicit-API mode: every public declaration must carry an explicit
+    // `public` / `internal` / `private` modifier. Locks the discipline so future contributors
+    // can't accidentally leak an implicit-public into the API surface.
+    explicitApi()
+
     androidTarget {
         publishLibraryVariants("release")
     }

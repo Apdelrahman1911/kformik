@@ -83,6 +83,12 @@ repositories {
 kotlin {
     jvmToolchain(17)
 
+    // Strict explicit-API mode: every public declaration must carry an explicit
+    // `public` / `internal` / `private` modifier. Locks the discipline so future contributors
+    // can't accidentally leak an implicit-public into the API surface; the v1.9.0 rollout
+    // surfaced (and corrected) several implicit-public declarations.
+    explicitApi()
+
     jvm {
         compilations.all {
             compileTaskProvider.configure {

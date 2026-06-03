@@ -73,8 +73,8 @@ import kotlin.jvm.JvmName
  * inherits its lifecycle. Otherwise [close] cancels the controller's internal scope. After
  * cancellation, mutations are silently dropped (mirroring Formik's `isMounted` check).
  */
-class FormikController<V>(
-    val config: FormikConfig<V>,
+public class FormikController<V>(
+    public val config: FormikConfig<V>,
 ) : FormikActions<V> {
 
     private val scope: CoroutineScope = config.coroutineScope
@@ -89,7 +89,7 @@ class FormikController<V>(
             status = config.initialStatus,
         )
     )
-    val initialState: StateFlow<FormikInitialState<V>> = _initialState.asStateFlow()
+    public val initialState: StateFlow<FormikInitialState<V>> = _initialState.asStateFlow()
 
     /** Live state. */
     private val _state = MutableStateFlow(
@@ -103,7 +103,7 @@ class FormikController<V>(
             submitCount = 0,
         )
     )
-    val state: StateFlow<FormikState<V>> = _state.asStateFlow()
+    public val state: StateFlow<FormikState<V>> = _state.asStateFlow()
 
     /**
      * Derived: are current values different from the (moving) initial-values baseline?
@@ -112,13 +112,13 @@ class FormikController<V>(
      * This avoids holding a long-lived collector job that would prevent [kotlinx.coroutines.test.runTest]
      * from completing.
      */
-    val dirty: StateFlow<Boolean> = DerivedStateFlow(
+    public val dirty: StateFlow<Boolean> = DerivedStateFlow(
         valueFn = { !deepEquals(_state.value.values, _initialState.value.values) },
         flowFn = { combine(_state, _initialState) { s, i -> !deepEquals(s.values, i.values) }.distinctUntilChanged() },
     )
 
     /** Derived: is the form valid (no errors)? */
-    val isValid: StateFlow<Boolean> = DerivedStateFlow(
+    public val isValid: StateFlow<Boolean> = DerivedStateFlow(
         valueFn = { _state.value.errors.isEmpty },
         flowFn = { _state.map { it.errors.isEmpty }.distinctUntilChanged() },
     )
@@ -344,37 +344,37 @@ class FormikController<V>(
      *
      * The [name] must be non-blank. Thread-safe.
      */
-    fun registerField(name: String, validator: FieldValidator? = null) {
+    public fun registerField(name: String, validator: FieldValidator? = null) {
         require(name.isNotBlank()) { "Field name must not be blank" }
         _fieldRegistry.update { it + (name to validator) }
     }
 
     /** Unregister a field by path. No-op if not registered. Thread-safe. */
-    fun unregisterField(name: String) {
+    public fun unregisterField(name: String) {
         require(name.isNotBlank()) { "Field name must not be blank" }
         _fieldRegistry.update { it - name }
     }
 
     /** Read the current value at [path] (any type). */
-    fun valueAt(path: String): Any? {
+    public fun valueAt(path: String): Any? {
         require(path.isNotBlank()) { "Field path must not be blank" }
         return updater.getAt(_state.value.values, path)
     }
 
     /** Read the current error at [path]. */
-    fun errorAt(path: String): String? {
+    public fun errorAt(path: String): String? {
         require(path.isNotBlank()) { "Field path must not be blank" }
         return _state.value.errors[path]
     }
 
     /** Read the current touched flag at [path]. */
-    fun touchedAt(path: String): Boolean {
+    public fun touchedAt(path: String): Boolean {
         require(path.isNotBlank()) { "Field path must not be blank" }
         return _state.value.touched[path]
     }
 
     /** Construct an untyped [FieldBinding] for [name]. */
-    fun field(name: String): FieldBinding<Any?> {
+    public fun field(name: String): FieldBinding<Any?> {
         require(name.isNotBlank()) { "Field name must not be blank" }
         return makeBinding(name)
     }
@@ -398,7 +398,7 @@ class FormikController<V>(
      * Kotlin generics on JVM/Native — fixable only with `kotlin-reflect` or a per-element walk,
      * neither of which we want in the core dependency.)
      */
-    inline fun <reified T> fieldOf(name: String): FieldBinding<T> {
+    inline public fun <reified T> fieldOf(name: String): FieldBinding<T> {
         @Suppress("UNCHECKED_CAST")
         val b = field(name) as FieldBinding<Any?>
         val raw = b.value
@@ -436,7 +436,7 @@ class FormikController<V>(
      * `null` when the path is absent/unresolved or holds a value not assignable to [T] — never
      * throws. Prefer this for optional or not-yet-populated fields.
      */
-    inline fun <reified T> fieldOfOrNull(name: String): FieldBinding<T?> {
+    inline public fun <reified T> fieldOfOrNull(name: String): FieldBinding<T?> {
         @Suppress("UNCHECKED_CAST")
         val b = field(name) as FieldBinding<Any?>
         return FieldBinding(
@@ -462,7 +462,7 @@ class FormikController<V>(
      * field-grained recomposition in the Compose adapter. Implemented as a non-launching facade,
      * so it spawns no long-lived collector job.
      */
-    fun fieldFlow(name: String): StateFlow<FieldBinding<Any?>> {
+    public fun fieldFlow(name: String): StateFlow<FieldBinding<Any?>> {
         require(name.isNotBlank()) { "Field name must not be blank" }
         return DerivedStateFlow(
             valueFn = { makeBinding(name) },
@@ -866,7 +866,7 @@ class FormikController<V>(
      * any other failure is delivered to [FormikConfig.onError] (if set) instead of being silently
      * swallowed. Use the suspend [submit] when you need to await/observe the result directly.
      */
-    fun handleSubmit() {
+    public fun handleSubmit() {
         scope.launch {
             try {
                 submit()
@@ -934,7 +934,7 @@ class FormikController<V>(
      * Fire-and-forget reset. [CancellationException] propagates; any other failure is delivered to
      * [FormikConfig.onError] (if set) instead of being silently swallowed.
      */
-    fun handleReset() {
+    public fun handleReset() {
         scope.launch {
             try {
                 resetForm()
@@ -955,7 +955,7 @@ class FormikController<V>(
      *
      * @param newInitial the new baseline.
      */
-    suspend fun reinitialize(newInitial: FormikInitialState<V>) {
+    suspend public fun reinitialize(newInitial: FormikInitialState<V>) {
         if (!scope.isActive) return
         if (deepEquals(newInitial.values, _initialState.value.values) &&
             deepEquals(newInitial.errors.byPath, _initialState.value.errors.byPath) &&
@@ -999,7 +999,7 @@ class FormikController<V>(
      * scope finally cancels — defeating the v1.9.0 cancellation mechanism exactly when it
      * matters most (the supported `viewModelScope`-equivalent lifecycle path).
      */
-    fun close() {
+    public fun close() {
         _debounceCollectorJob?.cancel()
         _inFlightDebouncedValidation?.cancel()
         if (config.coroutineScope == null) {
@@ -1010,16 +1010,16 @@ class FormikController<V>(
     // ------------------------------------------------------------------------- expose flags
 
     /** Read-only mirror of [FormikConfig.validateOnChange]. */
-    val validateOnChange: Boolean get() = config.validateOnChange
+    public val validateOnChange: Boolean get() = config.validateOnChange
 
     /** Read-only mirror of [FormikConfig.validateOnBlur]. */
-    val validateOnBlur: Boolean get() = config.validateOnBlur
+    public val validateOnBlur: Boolean get() = config.validateOnBlur
 
     /** Read-only mirror of [FormikConfig.validateOnMount]. */
-    val validateOnMount: Boolean get() = config.validateOnMount
+    public val validateOnMount: Boolean get() = config.validateOnMount
 
     /** Read-only mirror of [FormikConfig.enableReinitialize]. */
-    val enableReinitialize: Boolean get() = config.enableReinitialize
+    public val enableReinitialize: Boolean get() = config.enableReinitialize
 }
 
 // =================================================================================== helpers

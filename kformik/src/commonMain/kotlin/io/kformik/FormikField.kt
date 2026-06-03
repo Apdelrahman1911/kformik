@@ -8,7 +8,7 @@ package io.kformik
  * widget library. A Compose adapter might project it into a `TextFieldState`; a SwiftUI
  * adapter into an `@Published` shim.
  */
-data class FieldBinding<T>(
+data public class FieldBinding<T>(
     /** The field's path / name (`"email"`, `"user.address.street"`, etc.). */
     val name: String,
     /** Current value at this path. */

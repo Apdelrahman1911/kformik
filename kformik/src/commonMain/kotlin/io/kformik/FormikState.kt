@@ -6,7 +6,7 @@ package io.kformik
  * `status` is freeform (`Any?`) so consumers can drop arbitrary out-of-band info there
  * (e.g. a server-side success message). It is not interpreted by the controller.
  */
-data class FormikState<V>(
+data public class FormikState<V>(
     val values: V,
     val errors: FormikErrors = FormikErrors.Empty,
     val touched: FormikTouched = FormikTouched.Empty,
@@ -21,7 +21,7 @@ data class FormikState<V>(
  * (it updates whenever [io.kformik.FormikController.resetForm] or
  * [io.kformik.FormikController.reinitialize] is called).
  */
-data class FormikInitialState<V>(
+data public class FormikInitialState<V>(
     val values: V,
     val errors: FormikErrors = FormikErrors.Empty,
     val touched: FormikTouched = FormikTouched.Empty,

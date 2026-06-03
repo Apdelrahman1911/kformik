@@ -11,10 +11,10 @@ package io.kformik
  * Implementations are expected to be **safe under cancellation**: if the coroutine running
  * [validate] is cancelled, the implementation should not retain references to the partial state.
  */
-fun interface SchemaValidator<V> {
+public fun interface SchemaValidator<V> {
     /** Returns the full error map for [values]. Empty map means "valid". */
-    suspend fun validate(values: V): FormikErrors
+    suspend public fun validate(values: V): FormikErrors
 }
 
 /** Per-field validator: takes the field's value and returns either an error message or null. */
-typealias FieldValidator = suspend (Any?) -> String?
+public typealias FieldValidator = suspend (Any?) -> String?

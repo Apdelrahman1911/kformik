@@ -6,7 +6,7 @@ import kotlinx.coroutines.CoroutineScope
  * The full configuration for a [FormikController]. Equivalent to Formik's `FormikConfig<Values>`,
  * with React-specific bits stripped out (render slots, `innerRef`, etc.).
  */
-data class FormikConfig<V>(
+data public class FormikConfig<V>(
     /** Required: the initial values. Snapshot is taken on construction. */
     val initialValues: V,
 

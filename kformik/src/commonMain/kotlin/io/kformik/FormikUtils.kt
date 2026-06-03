@@ -6,7 +6,7 @@ package io.kformik
  * same arrays (element-wise). Falls back to `==` for everything else (which calls `data class`
  * `equals`, so typed `Values` already work).
  */
-fun deepEquals(a: Any?, b: Any?): Boolean {
+public fun deepEquals(a: Any?, b: Any?): Boolean {
     if (a === b) return true
     if (a == null || b == null) return false
     return when {
@@ -33,7 +33,7 @@ fun deepEquals(a: Any?, b: Any?): Boolean {
  * Returns `null` if any segment along the path doesn't resolve. Useful for consumers who keep
  * their values as a [Map] rather than building a custom [ValuesUpdater].
  */
-fun Map<String, Any?>.path(path: String): Any? = getIn(this, path)
+public fun Map<String, Any?>.path(path: String): Any? = getIn(this, path)
 
 /**
  * Free-function equivalent of `lodash.get` / Formik's `getIn(obj, key, def?)`. Walks [path]
@@ -48,7 +48,7 @@ fun Map<String, Any?>.path(path: String): Any? = getIn(this, path)
  *
  * Built on [io.kformik.internal.PathParser].
  */
-fun getIn(values: Any?, path: String, default: Any? = null): Any? {
+public fun getIn(values: Any?, path: String, default: Any? = null): Any? {
     // Treat a blank path (empty or all-whitespace) as "the whole object", symmetric with the
     // empty-string fast path, rather than looking up a literal whitespace key.
     if (path.isBlank()) return values ?: default
@@ -85,5 +85,5 @@ fun getIn(values: Any?, path: String, default: Any? = null): Any? {
  * Only supported on `Map<String, Any?>`-shaped values (delegates to [MapValuesUpdater]). For
  * typed `data class` values, use a custom [ValuesUpdater] instead.
  */
-fun setIn(values: Map<String, Any?>, path: String, value: Any?): Map<String, Any?> =
+public fun setIn(values: Map<String, Any?>, path: String, value: Any?): Map<String, Any?> =
     MapValuesUpdater.setAt(values, path, value)
