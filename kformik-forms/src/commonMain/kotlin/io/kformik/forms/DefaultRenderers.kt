@@ -349,7 +349,14 @@ private fun SelectRenderer(
             label = displayLabel(field)?.let { { Text(it) } },
             placeholder = field.placeholder?.let { { Text(it) } },
             isError = error != null,
-            supportingText = supportingText(field, error),
+            // Sibling renderers (Checkbox / Switch / Radio) mark the error Text as a polite live
+            // region for screen readers; supportingText is just a slot, so build a small Text
+            // composable that applies the same semantic. Consistent a11y across all renderers.
+            supportingText = if (error != null) {
+                { Text(error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+            } else if (field.helperText != null) {
+                { Text(field.helperText) }
+            } else null,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
         )
         // ExposedDropdownMenu is an extension on ExposedDropdownMenuBoxScope; resolves implicitly

@@ -235,12 +235,16 @@ class FormSchema<V> internal constructor(
      * regardless of what the form held. Typed-data-class forms with a schema therefore silently
      * "passed" every per-field rule that returned null-on-null.
      *
-     * Set once via [configureValuesUpdater] during controller construction; read by `validate`
-     * thereafter. The single-writer-then-many-reader pattern is publication-safe under Kotlin's
-     * memory model so long as the write happens-before the first read — which is guaranteed by
-     * the controller calling `configureValuesUpdater` in its `init {}` block before exposing
-     * itself to other coroutines.
+     * Set via [configureValuesUpdater] during controller construction; read by `validate`
+     * thereafter. `@Volatile` covers the cross-controller-sharing case: if a single FormSchema
+     * instance is reused across multiple FormikController constructions (an unusual but legal
+     * pattern), each controller's `init {}` writes its own updater here. Without volatile, a
+     * happens-before edge isn't guaranteed across the unsynchronized writes; the last writer wins
+     * regardless, but volatile ensures readers see SOMEONE's commit rather than a torn value.
+     * (Schemas shared across controllers that need DIFFERENT updaters is a user error — they
+     * should construct a separate schema per controller.)
      */
+    @kotlin.concurrent.Volatile
     private var configuredUpdater: ValuesUpdater<V>? = null
 
     /**
