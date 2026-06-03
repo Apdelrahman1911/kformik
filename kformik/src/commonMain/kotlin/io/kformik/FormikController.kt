@@ -127,6 +127,19 @@ class FormikController<V>(
     private val mutex = Mutex()
 
     /**
+     * Single-flight gate for [submit]. Held for the entire submit lifecycle — including the
+     * suspending `config.onSubmit` call — so a second `submit()` issued while the first is still
+     * awaiting the user's submission handler returns immediately as a no-op (`tryLock` fails).
+     *
+     * Separated from the `isSubmitting` flag intentionally: [resetForm] (and direct user calls to
+     * [setSubmitting]) can freely flip `isSubmitting = false` without disarming the structural
+     * single-flight guard. Without this, a `resetForm()` landing mid-submit would clear the flag
+     * and let a second `submit()` race past the in-mutex `isSubmitting` check, breaking the
+     * documented single-flight guarantee.
+     */
+    private val submitMutex = Mutex()
+
+    /**
      * Monotonic validation-intent counter, mutated only under [mutex]. Bumped by every mutation
      * that may trigger validation and by reset/reinitialize. A validation run captures it at the
      * moment it is launched and refuses to commit its errors if a newer intent has since appeared.
@@ -425,13 +438,21 @@ class FormikController<V>(
         if (!scope.isActive) return
         val willValidate = shouldValidate ?: config.validateOnChange
         var gen = 0L
-        val newValues: V = mutex.withLock {
-            val next = updater.setAt(_state.value.values, name, value)
+        var newValues: Any? = null
+        mutex.withLock {
             gen = ++validationGeneration
-            _state.update { it.copy(values = next) }
-            next
+            // Compute setAt INSIDE the compare-and-set so each retry recomputes against the latest
+            // committed values — a concurrent lock-free setFormikState (which can mutate values
+            // without holding the mutex) is therefore merged with, not clobbered by, this write.
+            // Mirrors applyArrayMutation's pattern.
+            _state.update { current ->
+                val next = updater.setAt(current.values, name, value)
+                newValues = next
+                current.copy(values = next)
+            }
         }
-        if (willValidate) scheduleChangeValidation(newValues, gen)
+        @Suppress("UNCHECKED_CAST")
+        if (willValidate) scheduleChangeValidation(newValues as V, gen)
     }
 
     override suspend fun setFieldValue(name: String, updater: (Any?) -> Any?, shouldValidate: Boolean?) {
@@ -439,20 +460,26 @@ class FormikController<V>(
         if (!scope.isActive) return
         val willValidate = shouldValidate ?: config.validateOnChange
         var gen = 0L
-        val newValues: V = mutex.withLock {
-            val prev = this.updater.getAt(_state.value.values, name)
-            val next = this.updater.setAt(_state.value.values, name, updater(prev))
+        var newValues: Any? = null
+        mutex.withLock {
             gen = ++validationGeneration
-            _state.update { it.copy(values = next) }
-            next
+            _state.update { current ->
+                val prev = this.updater.getAt(current.values, name)
+                val next = this.updater.setAt(current.values, name, updater(prev))
+                newValues = next
+                current.copy(values = next)
+            }
         }
-        if (willValidate) scheduleChangeValidation(newValues, gen)
+        @Suppress("UNCHECKED_CAST")
+        if (willValidate) scheduleChangeValidation(newValues as V, gen)
     }
 
     override suspend fun setValues(values: V, shouldValidate: Boolean?) {
         if (!scope.isActive) return
         val willValidate = shouldValidate ?: config.validateOnChange
         val gen = mutex.withLock {
+            // Wholesale replacement: `values` is the caller's intent verbatim. CAS via update still
+            // forces a concurrent lock-free state mutation to retry rather than be interleaved.
             _state.update { it.copy(values = values) }
             ++validationGeneration
         }
@@ -463,13 +490,17 @@ class FormikController<V>(
         if (!scope.isActive) return
         val willValidate = shouldValidate ?: config.validateOnChange
         var gen = 0L
-        val resolved: V = mutex.withLock {
-            val next = updater(_state.value.values)
+        var resolved: Any? = null
+        mutex.withLock {
             gen = ++validationGeneration
-            _state.update { it.copy(values = next) }
-            next
+            _state.update { current ->
+                val next = updater(current.values)
+                resolved = next
+                current.copy(values = next)
+            }
         }
-        if (willValidate) scheduleChangeValidation(resolved, gen)
+        @Suppress("UNCHECKED_CAST")
+        if (willValidate) scheduleChangeValidation(resolved as V, gen)
     }
 
     override suspend fun setFieldTouched(name: String, isTouched: Boolean, shouldValidate: Boolean?) {
@@ -675,50 +706,64 @@ class FormikController<V>(
      */
     override suspend fun submit() {
         if (!scope.isActive) return
-        // SUBMIT_ATTEMPT: touch every leaf of `values` AND every registered field, capture the
-        // submit snapshot, and claim a validation generation — all atomically under the mutex.
-        var gen = 0L
-        val submitValues: V = mutex.withLock {
-            val cur = _state.value
-            if (cur.isSubmitting) return  // single-flight guard (non-local return releases the lock)
-            // Build the touched-all map in one pass (rightmost-wins ordering) instead of two
-            // intermediate map concatenations.
-            val touchedAll = FormikTouched(
-                buildMap {
-                    putAll(cur.touched.byPath)
-                    updater.leafPaths(cur.values).forEach { put(it, true) }
-                    _fieldRegistry.value.keys.forEach { put(it, true) }
-                }
-            )
-            gen = ++validationGeneration
-            _state.update {
-                it.copy(
-                    touched = touchedAll,
-                    isSubmitting = true,
-                    submitCount = it.submitCount + 1,
-                )
-            }
-            cur.values
-        }
-
-        val errors: FormikErrors = try {
-            runAllValidationsAndCommit(submitValues, gen)
-        } catch (t: Throwable) {
-            _state.update { it.copy(isSubmitting = false) }
-            throw t
-        }
-
-        if (errors.isNotEmpty) {
-            _state.update { it.copy(isSubmitting = false) }
-            return
-        }
-
+        // Structural single-flight gate: while a submit is in flight (submitMutex held, including
+        // during the suspending `config.onSubmit`), any concurrent `submit()` returns immediately
+        // as a no-op. This holds even if `resetForm()` or `setSubmitting(false)` clears the
+        // `isSubmitting` flag mid-submit — the gate is independent of the flag.
+        if (!submitMutex.tryLock()) return
         try {
-            config.onSubmit(submitValues, this)
-            if (scope.isActive) _state.update { it.copy(isSubmitting = false) }
-        } catch (t: Throwable) {
-            if (scope.isActive) _state.update { it.copy(isSubmitting = false) }
-            throw t
+            // SUBMIT_ATTEMPT: touch every leaf of `values` AND every registered field, capture the
+            // submit snapshot, and claim a validation generation — all atomically under the mutex.
+            var gen = 0L
+            var submitValues: Any? = null
+            mutex.withLock {
+                gen = ++validationGeneration
+                // Capture the submit snapshot INSIDE the CAS lambda so we see the same values the
+                // committed state holds. Reading a pre-CAS snapshot ("`cur = _state.value`" then
+                // returning `cur.values` later) would let a concurrent lock-free setFormikState
+                // land between snapshot read and CAS commit, so `onSubmit` would receive the OLD
+                // values while published state showed the NEW ones. Building touchedAll inside the
+                // lambda also keeps it aligned with `current.values` on each CAS retry.
+                _state.update { current ->
+                    submitValues = current.values
+                    val touchedAll = FormikTouched(
+                        buildMap {
+                            putAll(current.touched.byPath)
+                            updater.leafPaths(current.values).forEach { put(it, true) }
+                            _fieldRegistry.value.keys.forEach { put(it, true) }
+                        }
+                    )
+                    current.copy(
+                        touched = touchedAll,
+                        isSubmitting = true,
+                        submitCount = current.submitCount + 1,
+                    )
+                }
+            }
+            @Suppress("UNCHECKED_CAST")
+            val resolvedValues = submitValues as V
+
+            val errors: FormikErrors = try {
+                runAllValidationsAndCommit(resolvedValues, gen)
+            } catch (t: Throwable) {
+                _state.update { it.copy(isSubmitting = false) }
+                throw t
+            }
+
+            if (errors.isNotEmpty) {
+                _state.update { it.copy(isSubmitting = false) }
+                return
+            }
+
+            try {
+                config.onSubmit(resolvedValues, this)
+                if (scope.isActive) _state.update { it.copy(isSubmitting = false) }
+            } catch (t: Throwable) {
+                if (scope.isActive) _state.update { it.copy(isSubmitting = false) }
+                throw t
+            }
+        } finally {
+            submitMutex.unlock()
         }
     }
 
@@ -771,6 +816,12 @@ class FormikController<V>(
             // Reset is a full-state replacement; still commit via compare-and-set (not a blind
             // assignment) so a concurrent lock-free setter that lands mid-reset forces a retry
             // rather than being interleaved — honoring the class-wide CAS invariant.
+            //
+            // Note: `isSubmitting = false` here is the visible-flag reset (matches Formik). The
+            // *single-flight* guarantee for submit() — that a second submit cannot start while a
+            // first is awaiting `onSubmit` — is enforced structurally by [submitMutex], not by the
+            // `isSubmitting` flag. So clearing isSubmitting here does NOT let a concurrent submit
+            // race past the single-flight gate.
             _state.update {
                 FormikState(
                     values = values,
