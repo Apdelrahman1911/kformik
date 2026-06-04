@@ -260,8 +260,15 @@ public class StateSnapshot internal constructor(controller: FormikController<Map
      * the same [MapValuesUpdater] the controller uses internally; flat keys resolve as direct map
      * lookups, so `value("email")` behaves identically to the pre-1.8.1 implementation. Returns
      * `null` for unknown paths.
+     *
+     * Empty / `.` / `[]` paths return `null` rather than crashing. The underlying
+     * [MapValuesUpdater.getAt] rejects empty paths with [IllegalArgumentException] (symmetric
+     * with `setAt`); a Swift caller passing `""` from a not-yet-bound `@State var name = ""`
+     * would otherwise terminate the iOS process. Mirrors the pre-1.9.0 lenient behavior.
      */
-    public fun value(name: String): Any? = MapValuesUpdater.getAt(state.values, name)
+    public fun value(name: String): Any? =
+        if (name.isEmpty()) null
+        else runCatching { MapValuesUpdater.getAt(state.values, name) }.getOrNull()
     public fun error(name: String): String? = state.errors[name]
     public fun isTouched(name: String): Boolean = state.touched[name]
     // Mirror the controller/Compose displayError: a blank-but-present error is not surfaced.

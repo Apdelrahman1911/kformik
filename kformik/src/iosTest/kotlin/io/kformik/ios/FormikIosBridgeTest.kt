@@ -285,6 +285,23 @@ class FormikIosBridgeTest {
         assertEquals("Aisha", s.value("user.name"), "repeat call returns same value")
     }
 
+    @Test
+    fun snapshot_value_emptyPath_returnsNull_doesNotCrash() = runTest {
+        // Swift consumers binding @State var name = "" to bridge.snapshot().value(name) would
+        // crash the iOS process before this fix because MapValuesUpdater.getAt rejects empty
+        // paths with IllegalArgumentException. Regression coverage for the v1.9.0 final-review
+        // finding "value-empty-path-crash".
+        val b = newBridge(initial = mapOf<String, Any?>("email" to "x@y.com"))
+        val s = b.snapshot()
+        assertNull(s.value(""), "empty path resolves to null instead of throwing")
+        assertNull(s.value("."), "single-dot path resolves to null instead of throwing")
+        assertNull(s.value("[]"), "empty bracket path resolves to null instead of throwing")
+        // Non-empty unknown paths still resolve to null (no regression for the happy path).
+        assertNull(s.value("missing"), "unknown flat path still resolves to null")
+        // The valid lookup still works.
+        assertEquals("x@y.com", s.value("email"))
+    }
+
     // ---------------------------------------------------------------------- validation
 
     @Test
