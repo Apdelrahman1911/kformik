@@ -114,7 +114,7 @@ fun LoginScreen() {
             label = { Text("Email") },
             isError = form.displayError("email") != null,
             supportingText = { form.displayError("email")?.let { Text(it) } },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxWidth(),
         )
 
         OutlinedTextField(
@@ -124,6 +124,7 @@ fun LoginScreen() {
             isError = form.displayError("password") != null,
             supportingText = { form.displayError("password")?.let { Text(it) } },
             visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
         )
 
         Button(
