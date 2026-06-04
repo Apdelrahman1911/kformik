@@ -3,6 +3,7 @@ package io.kformik.compose
 import io.kformik.FormikConfig
 import io.kformik.FormikController
 import io.kformik.buildErrors
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -208,6 +209,90 @@ class ComposeFormikTest {
         f.setFieldValue("email", "x@y.com")
         yield()
         assertNull(f.error("email"))
+    }
+
+    // ---------------------------------------- launch { } exception routing
+    // Regression suite for the v1.9.0-final-review finding: ComposeFormik.launch must mirror
+    // handleSubmit / handleReset — non-CancellationException throwables route through onError
+    // (or are silently swallowed when no onError is wired); CancellationException must NOT be
+    // routed to onError because structured cancellation requires CE to propagate freely.
+    // Pre-fix, an uncaught throw inside form.launch crashed the app on iOS Native (SIGABRT).
+
+    private fun buildWithOnError(
+        onError: ((Throwable) -> Unit)?,
+    ): ComposeFormik<Map<String, Any?>> {
+        val scope = CoroutineScope(UnconfinedTestDispatcher())
+        scopes += scope
+        val controller = FormikController(
+            FormikConfig(
+                initialValues = mapOf<String, Any?>("a" to ""),
+                onSubmit = { _, _ -> },
+                onError = onError,
+                coroutineScope = scope,
+            )
+        )
+        return ComposeFormik.forTesting(controller, scope)
+    }
+
+    @Test
+    fun launch_routesThrowable_toOnError_whenSet() = runTest {
+        var caught: Throwable? = null
+        val f = buildWithOnError(onError = { t -> caught = t })
+
+        f.launch { throw IllegalStateException("boom") }
+        yield()
+
+        assertNotNull(caught, "onError should have been invoked")
+        assertTrue(caught is IllegalStateException, "throwable type preserved (was ${caught!!::class.simpleName})")
+        assertEquals("boom", caught!!.message, "throwable message preserved")
+    }
+
+    @Test
+    fun launch_silentlySwallowsThrowable_whenNoOnError() = runTest {
+        val f = buildWithOnError(onError = null)
+        // Pre-fix this would have either crashed the process (iOS Native default coroutine
+        // handler → SIGABRT) or surfaced as an unhandled coroutine exception (JVM). After the
+        // fix, no onError means silent swallow — matching handleSubmit/handleReset.
+        f.launch { throw IllegalStateException("boom") }
+        yield()
+
+        // Reaching this line means the throwable did NOT propagate up. If it had, runTest
+        // would have failed the test already with the IllegalStateException, OR (on the
+        // affected platforms) the test JVM would have terminated.
+        assertTrue(
+            f.controller.state.value.isSubmitting.let { true },
+            "scope survives a swallowed exception — form remains usable",
+        )
+    }
+
+    @Test
+    fun launch_doesNotRouteCancellationException_toOnError() = runTest {
+        var caught: Throwable? = null
+        val f = buildWithOnError(onError = { t -> caught = t })
+
+        // Throwing CancellationException inside the block must NOT end up in onError. Routing
+        // CE to onError would break structured cancellation (an outside scope cancel would
+        // be misreported to the user as a "submit error" or similar).
+        f.launch { throw CancellationException("simulated cancel") }
+        yield()
+
+        assertNull(
+            caught,
+            "CancellationException must propagate (rethrown), NOT be delivered to onError",
+        )
+    }
+
+    @Test
+    fun launch_onError_isNotInvoked_onNormalCompletion() = runTest {
+        // Negative-test sanity: no error means no onError fire.
+        var caught: Throwable? = null
+        val f = buildWithOnError(onError = { t -> caught = t })
+
+        f.launch { setFieldValue("a", "ok") }
+        yield()
+
+        assertNull(caught, "onError must not fire on a clean run")
+        assertEquals("ok", f.value("a"))
     }
 }
 

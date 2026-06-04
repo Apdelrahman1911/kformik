@@ -21,6 +21,7 @@ import io.kformik.FormikSubmitHandler
 import io.kformik.FormikTouched
 import io.kformik.SchemaValidator
 import io.kformik.ValuesUpdater
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -164,9 +165,25 @@ public class ComposeFormik<V> internal constructor(
     /**
      * Run a suspend block on the form's scope — handy for `onClick = { form.launch { … } }`
      * patterns that need access to `actions: FormikActions<V>`.
+     *
+     * Exception handling mirrors [FormikController.handleSubmit] / [FormikController.handleReset]:
+     * [CancellationException] propagates (so structured cancellation works), any other failure is
+     * delivered to [FormikConfig.onError] when set, and silently swallowed otherwise.
+     *
+     * Before this routing was wired (≤ v1.9.0), an uncaught throw inside the block crashed the
+     * app on Kotlin/Native (SIGABRT) because the default coroutine exception handler terminates
+     * the process. Wiring `onError` (or this routing) is the fire-and-forget contract.
      */
     public fun launch(block: suspend FormikActions<V>.() -> Unit) {
-        scope.launch { with(controller) { block(controller) } }
+        scope.launch {
+            try {
+                with(controller) { block(controller) }
+            } catch (c: CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                controller.config.onError?.invoke(t)
+            }
+        }
     }
 }
 
