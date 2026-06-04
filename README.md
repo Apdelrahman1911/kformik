@@ -337,6 +337,25 @@ fun LoginScreen() {
 
 The form-state code above compiles unchanged on Android, Desktop, and iOS. The only platform-specific layer is the choice of `OutlinedTextField` / `Button` widgets (Material 3 on Android + Desktop; Compose Multiplatform Material on iOS).
 
+#### Field-grained recomposition
+
+The example above subscribes to whole-form state via `form.state` — fine for small forms, but every keystroke in any field recomposes every reader. For non-trivial forms, prefer `fieldState(name)`: a per-field `State<FieldBinding<Any?>>` backed by a deduplicated flow that only emits when *that field's* value / error / touched changes.
+
+```kotlin
+@Composable
+fun EmailRow(form: ComposeFormik<Map<String, Any?>>) {
+    val email by form.fieldState("email")    // recomposes ONLY on email changes
+    OutlinedTextField(
+        value = (email.value as? String).orEmpty(),
+        onValueChange = { form.setFieldValue("email", it) },
+        isError = email.displayError != null,
+        supportingText = { email.displayError?.let { Text(it) } },
+    )
+}
+```
+
+For typed forms, `valueOf<T>(name)` and `fieldOfOrNull<T>(name)` give you a typed read without the `as? String` ceremony.
+
 Working Android sample in [`sample-android-app/`](sample-android-app/). More patterns in [`docs/COMPOSE_USAGE.md`](docs/COMPOSE_USAGE.md).
 
 `:kformik-compose` runs a JVM-host Compose UI test rig (`runComposeUiTest`) covering `state` / `dirty` / `isValid` / `fieldState` / `enableReinitialize` — same `:kformik-compose:jvmTest` task already wired into CI; no emulator required.
@@ -363,6 +382,8 @@ KformikForm(
 ```
 
 Renders Material 3 widgets, wires up validation, gates the submit button on `isValid && !isSubmitting`. Ten field types ship: `Text`, `Email`, `Password`, `Multiline`, `Number`, `Checkbox`, `Switch`, `Select`, `Radio`, `Date`. Escape hatches: per-field `renderOverride`, custom `submitButton` slot, `footerSlot` for form-level error summaries, `onError` hook, server-side hydration via `initialErrors` / `initialTouched` / `initialStatus`, and pass-through for `validateDebounceMs` + `validateAsync`. Full reference in [`docs/FORMS_USAGE.md`](docs/FORMS_USAGE.md).
+
+Need finer-grained layout (custom containers, dividers between sections, manual submit button)? Drop down to `KformikFields(fields, form)` — same renderers, but it leaves the surrounding `Column` and submit-button slot to you. Useful when the default vertical-stack `KformikForm` layout doesn't fit.
 
 The default renderers ship with **accessibility baked in**: `Modifier.toggleable` / `selectable` / `selectableGroup` for proper role + group announcements; an `error` text marked as a `liveRegion = LiveRegionMode.Polite` so screen readers announce newly-appearing validation errors when they land; a programmatic `stateDescription = "Required"` so TalkBack / VoiceOver announce required fields without depending on the visual `*` suffix.
 
@@ -445,7 +466,7 @@ Maven Central release process: [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.
 - **KSP processor** (`:kformik-ksp`, experimental): `@FormValues` → `<Name>Paths` + `<Name>Updater : ValuesUpdater<Name>`. Flat and nested `data class`es. Incremental per-file dependencies (KSP1 + KSP2).
 - **CI** (`.github/workflows/ci.yml`): every push / PR to `main` runs JVM + Android + KSP tests, full Compose UI test rig, iOS-simulator tests, `iosArm64` + `iosX64` cross-compile for all three KMP modules, `apiCheck` baselines, and verifies publication wiring via `publishToMavenLocal`.
 - **Automated release** (`.github/workflows/release.yml`): pushing a `v*` tag runs the signed pre-publish verification → Sonatype staging → `bulk/close` + state poll → `bulk/promote` to Central → `gh release create`. The promote step is gated behind a `release` GitHub environment with a required-reviewer approval (recommend self-review). Failures drop the staging repo via `bulk/drop`. `workflow_dispatch` with `dry_run = true` exercises the pipeline without publishing. See [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md).
-- **1147 tests / 0 failures** across the four modules (kformik 268 JVM + 262 Android debug + 262 Android release + 286 iOS sim, kformik-compose 20 JVM incl. 5 Compose UI tests, kformik-forms 26 JVM, kformik-ksp 23). All four published modules use `explicitApi()` strict mode. `apiCheck` baselines committed for every module/variant pair.
+- **1153 tests / 0 failures** across the four modules (kformik 268 JVM + 262 Android debug + 262 Android release + 286 iOS sim incl. v1.9.0 hardening regressions, kformik-compose 20 JVM incl. 5 Compose UI tests, kformik-forms 26 JVM, kformik-ksp 24). All four published modules use `explicitApi()` strict mode. `apiCheck` baselines committed for every module/variant pair, including `@Deprecated(HIDDEN)` overloads that keep v1.8.0-compiled bytecode linking against the v1.9.0 jars.
 
 ## What isn't done
 
