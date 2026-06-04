@@ -16,7 +16,10 @@ on:
       dry_run:
         description: 'Run through staging upload but skip close / promote / GitHub release.'
         type: boolean
-        default: false
+        # Default to TRUE for manual runs — a maintainer who clicks "Run workflow" without
+        # flipping the toggle should NOT publish to Maven Central by mistake. Real releases
+        # come from a `v*` tag push (where dry_run is always false), not from this dispatch.
+        default: true
 
 concurrency:
   group: release
@@ -239,6 +242,22 @@ jobs:
               -H "Accept: application/json" \
               "https://ossrh-staging-api.central.sonatype.com/service/local/staging/bulk/drop" \
               -d "{\"data\":{\"description\":\"Drop: workflow ${{ github.run_id }} failed\",\"stagedRepositoryIds\":[\"${REPO_ID}\"],\"autoDropAfterRelease\":false}}" || true
+
+      - name: Drop staging after successful dry-run
+        # Successful dry-runs would otherwise leave an unconfirmed staging repo accumulating in
+        # Sonatype. The promote step is skipped (DRY_RUN=true), so the staging repo never auto-
+        # drops via `autoDropAfterRelease`. Clean it up explicitly.
+        if: success() && env.DRY_RUN == 'true' && steps.stage.outputs.repo_id != ''
+        env:
+          REPO_ID: ${{ steps.stage.outputs.repo_id }}
+        run: |
+          echo "Dry-run complete; dropping staging repo $REPO_ID to avoid accumulation"
+          curl -fsSL -u "${SONATYPE_USERNAME}:${SONATYPE_PASSWORD}" \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/json" \
+              "https://ossrh-staging-api.central.sonatype.com/service/local/staging/bulk/drop" \
+              -d "{\"data\":{\"description\":\"Drop: dry-run cleanup for workflow ${{ github.run_id }}\",\"stagedRepositoryIds\":[\"${REPO_ID}\"],\"autoDropAfterRelease\":false}}" || true
 
       - name: Upload artifacts on failure (for debugging)
         if: failure()
