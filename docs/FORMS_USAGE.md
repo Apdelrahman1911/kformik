@@ -63,7 +63,7 @@ fun RegistrationScreen() {
 | `label` | `String?` | Shown above/beside the widget. Gets a `*` suffix when `required = true` |
 | `placeholder` | `String?` | Hint inside empty text inputs |
 | `helperText` | `String?` | Muted text below the widget; replaced by the validation error when present |
-| `initialValue` | `Any?` | Seed value. `null` → default-for-type (see below) |
+| `initialValue` | `Any?` | Seed value. Default is the public sentinel `FieldDefaultValue` (means "no explicit value — use the type default below"). Pass `null` to store an explicit null (e.g. "no selection yet" for `Select`); pass any other value to override. |
 | `required` | `Boolean = false` | Auto-prepends a `required()` rule into the schema (unless your `rules` block already declares one). Also marks the label |
 | `disabled` | `Boolean = false` | Renders widget as non-interactive; form state is preserved |
 | `rules` | `FieldRulesBuilder<…>.() -> Unit = {}` | Same DSL as `formSchema { field("…") { … } }`: `required()`, `email()`, `minLength(n)`, `maxLength(n)`, `pattern(regex)`, `min(n)`, `max(n)`, `custom(name) { v, allValues -> … }` |
@@ -73,8 +73,7 @@ fun RegistrationScreen() {
 | Type | Default | Notes |
 |---|---|---|
 | `Text` / `Email` / `Password` / `Multiline` | `""` | Pairs with `required()`'s blank-string check |
-| `Number(asInt = true)` | `0` | Stored as `Int` |
-| `Number(asInt = false)` | `0.0` | Stored as `Double` |
+| `Number(asInt = true)` / `Number(asInt = false)` | `null` | The renderer commits typed input as `Int?` / `Double?`; `null` lets `required()` catch a missing value. Pass `Field(initialValue = 0)` to seed zero. (v1.8.0 defaulted to `0` / `0.0`; that silently passed `required()` because Boolean `false` / Int `0` are "present" — changed in v1.9.0.) |
 | `Checkbox` / `Switch` | `false` | |
 | `Select(options)` / `Radio(options)` | first option's value, or `null` if `options` is empty | |
 | `Date` | `null` | Stored as ISO `"yyyy-MM-dd"` `String?` when set |
@@ -97,7 +96,7 @@ FieldType.Radio(options = listOf(SelectOption(1, "One"), SelectOption(2, "Two"))
 FieldType.Date                                   // M3 DatePickerDialog → stored as ISO yyyy-MM-dd String?
 ```
 
-`SelectOption.value` is typed `Any` and is what gets stored in the form's value map; `SelectOption.label` is the display text.
+`SelectOption.value` is typed `Any?` and is what gets stored in the form's value map; `SelectOption.label` is the display text. A null value option is supported for "— select a … —" placeholders.
 
 ## Common rule patterns
 
@@ -165,8 +164,16 @@ fun KformikForm(
     validateDebounceMs: Long? = null,
     validateAsync: (suspend (Map<String, Any?>) -> FormikErrors)? = null,
     extraValidate: (suspend (Map<String, Any?>) -> FormikErrors)? = null,
+    // v1.9.0 additions:
+    onError: ((Throwable) -> Unit)? = null,
+    initialErrors: FormikErrors = FormikErrors.Empty,
+    initialTouched: FormikTouched = FormikTouched.Empty,
+    initialStatus: Any? = null,
+    footerSlot: @Composable (form: ComposeFormik<Map<String, Any?>>) -> Unit = {},
 )
 ```
+
+**v1.9.0 additions** — server-side hydration via `initialErrors` / `initialTouched` / `initialStatus`; `onError` slot for surfacing exceptions thrown by `onSubmit`; `footerSlot` for rendering form-level (non-field-bound) errors / status messages between the fields and the submit button.
 
 ## Escape hatches
 
