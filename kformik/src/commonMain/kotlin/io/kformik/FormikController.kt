@@ -242,7 +242,12 @@ public class FormikController<V>(
      * Job for the debounced-validation collector. Tracked explicitly so [close] can cancel it
      * even when the user supplied their own [CoroutineScope] (in which case [close] does NOT
      * cancel the scope itself — but the Job we created is still our lifecycle to clean up).
+     *
+     * `@Volatile` so a [close] call landing on one thread sees the latest write from the
+     * controller's coroutine scope on another. JVM happens-before guarantees would usually
+     * make this work on a single dispatcher, but the contract allows arbitrary outer scopes.
      */
+    @kotlin.concurrent.Volatile
     private var _debounceCollectorJob: Job? = null
 
     /**
@@ -252,7 +257,10 @@ public class FormikController<V>(
      * to completion only to have its result discarded at the generation-guarded commit step.
      * Requires the consumer's `validateAsync` to be cancel-cooperative (check `isActive` or
      * await a suspending call that propagates cancellation).
+     *
+     * `@Volatile` — see [_debounceCollectorJob] above for the rationale.
      */
+    @kotlin.concurrent.Volatile
     private var _inFlightDebouncedValidation: Job? = null
 
     init {
