@@ -217,10 +217,15 @@ private fun NumberRenderer(
                 // consumers in such locales sanitize via `renderOverride`.
                 else -> input.replace(',', '.').toDoubleOrNull()
             }
-            // Commit the parsed number when valid, else the raw string. Schema numeric rules
-            // (min/max) ignore non-Number values, so a transient String during typing doesn't
-            // throw — it just bypasses range checks until input parses again.
-            form.setFieldValue(name, parsed ?: input)
+            // Commit `parsed` (or null on parse failure) so the stored value's type stays
+            // Number? / null — never a transient String. Pre-1.9.0-final-review the renderer
+            // wrote the raw String on parse failure, which silently bypassed schema validation
+            // (min/max ignore non-Number; required() treats a non-blank String as present).
+            // A user typing "abc" into an Age field would pass `required()` AND `min(0)` AND
+            // `max(120)` until submit, then `api.create(age = values["age"] as Int)` would
+            // ClassCastException at the call site. The displayBuffer keeps showing the typed
+            // text so the user can correct it.
+            form.setFieldValue(name, parsed)
         },
         modifier = Modifier
             .fillMaxWidth()
