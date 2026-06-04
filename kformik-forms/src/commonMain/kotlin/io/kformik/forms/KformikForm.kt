@@ -150,6 +150,69 @@ public fun KformikForm(
 }
 
 /**
+ * Binary-compat overload preserving the v1.8.0 signature. v1.9.0 appended five new optional
+ * parameters (`onError`, `initialErrors`, `initialTouched`, `initialStatus`, `footerSlot`) plus
+ * a new public `FieldDefaultValue` sentinel — bytecode compiled against v1.8.0's
+ * `KformikForm-qmNWa6M` would `NoSuchMethodError` against v1.9.0's
+ * `KformikForm-DTe7Sbc`. This `@Deprecated(level = HIDDEN)` overload re-exposes the v1.8.0
+ * signature at the same mangled name, so v1.8.0-compiled jars keep linking — modern source
+ * callers see only the v1.9.0 form (HIDDEN deprecations are stripped from autocomplete /
+ * resolution).
+ *
+ * Mirrors the same pattern used for `rememberFormik`. The two binary breaks v1.9.0 would have
+ * shipped without these overloads are now source-and-binary compatible.
+ */
+@Deprecated(
+    message = "Binary-compat shim for v1.8.0 callers. Use the primary KformikForm overload.",
+    level = DeprecationLevel.HIDDEN,
+)
+@Composable
+public fun KformikForm(
+    fields: Map<String, Field>,
+    onSubmit: suspend (values: Map<String, Any?>) -> Unit,
+    modifier: Modifier = Modifier,
+    spacing: Dp = 12.dp,
+    submitButton: @Composable (
+        onSubmit: () -> Unit,
+        isValid: Boolean,
+        isSubmitting: Boolean,
+    ) -> Unit = { onSubmit, isValid, isSubmitting ->
+        DefaultSubmitButton(onSubmit = onSubmit, isValid = isValid, isSubmitting = isSubmitting)
+    },
+    renderOverride: (@Composable (
+        name: String,
+        field: Field,
+        form: ComposeFormik<Map<String, Any?>>,
+    ) -> Boolean)? = null,
+    validateOnChange: Boolean = true,
+    validateOnBlur: Boolean = true,
+    validateOnMount: Boolean = false,
+    enableReinitialize: Boolean = false,
+    validateDebounceMs: Long? = null,
+    validateAsync: (suspend (Map<String, Any?>) -> FormikErrors)? = null,
+    extraValidate: (suspend (Map<String, Any?>) -> FormikErrors)? = null,
+): Unit = KformikForm(
+    fields = fields,
+    onSubmit = onSubmit,
+    modifier = modifier,
+    spacing = spacing,
+    submitButton = submitButton,
+    renderOverride = renderOverride,
+    validateOnChange = validateOnChange,
+    validateOnBlur = validateOnBlur,
+    validateOnMount = validateOnMount,
+    enableReinitialize = enableReinitialize,
+    validateDebounceMs = validateDebounceMs,
+    validateAsync = validateAsync,
+    extraValidate = extraValidate,
+    onError = null,
+    initialErrors = FormikErrors.Empty,
+    initialTouched = FormikTouched.Empty,
+    initialStatus = null,
+    footerSlot = {},
+)
+
+/**
  * Default submit button — Material 3 [Button] with label "Submit", disabled while invalid or
  * mid-submission. Public so consumers can wrap/decorate without having to copy the gating logic.
  */

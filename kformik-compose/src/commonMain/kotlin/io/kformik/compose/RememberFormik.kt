@@ -274,6 +274,25 @@ public fun <V> rememberFormik(
         ComposeFormik(controller, scope)
     }
 
+    return rememberFormikInternal(
+        composeFormik = composeFormik,
+        enableReinitialize = enableReinitialize,
+        initialValues = initialValues,
+        initialErrors = initialErrors,
+        initialTouched = initialTouched,
+        initialStatus = initialStatus,
+    )
+}
+
+@Composable
+private fun <V> rememberFormikInternal(
+    composeFormik: ComposeFormik<V>,
+    enableReinitialize: Boolean,
+    initialValues: V,
+    initialErrors: FormikErrors,
+    initialTouched: FormikTouched,
+    initialStatus: Any?,
+): ComposeFormik<V> {
     if (enableReinitialize) {
         val firstPass = remember(composeFormik) { mutableStateOf(true) }
         // Watch ALL four hydration slots, not just `initialValues`. Pre-1.9.0-final-review the
@@ -302,3 +321,54 @@ public fun <V> rememberFormik(
 
     return composeFormik
 }
+
+/**
+ * Binary-compat overload preserving the v1.8.0 [rememberFormik] signature. v1.9.0 appended three
+ * new optional parameters (`initialErrors`, `initialTouched`, `initialStatus`). Bytecode
+ * compiled against v1.8.0's `rememberFormik` would `NoSuchMethodError` against v1.9.0 without
+ * this shim.
+ *
+ * The `@Deprecated(level = HIDDEN)` annotation strips the overload from autocomplete /
+ * resolution at the source level — modern callers see only the v1.9.0 form. Old jars
+ * compiled against v1.8.0 link to this shim, which forwards to the v1.9.0 implementation with
+ * the new hydration parameters defaulted.
+ */
+@Deprecated(
+    message = "Binary-compat shim for v1.8.0 callers. Use the primary rememberFormik overload.",
+    level = DeprecationLevel.HIDDEN,
+)
+@Composable
+public fun <V> rememberFormik(
+    initialValues: V,
+    validate: (suspend (V) -> FormikErrors)? = null,
+    schemaValidator: SchemaValidator<V>? = null,
+    onSubmit: FormikSubmitHandler<V>,
+    onReset: FormikResetHandler<V>? = null,
+    validateOnChange: Boolean = true,
+    validateOnBlur: Boolean = true,
+    validateOnMount: Boolean = false,
+    enableReinitialize: Boolean = false,
+    valuesUpdater: ValuesUpdater<V>? = null,
+    onError: ((Throwable) -> Unit)? = null,
+    key: Any? = Unit,
+    validateDebounceMs: Long? = null,
+    validateAsync: (suspend (V) -> FormikErrors)? = null,
+): ComposeFormik<V> = rememberFormik(
+    initialValues = initialValues,
+    validate = validate,
+    schemaValidator = schemaValidator,
+    onSubmit = onSubmit,
+    onReset = onReset,
+    validateOnChange = validateOnChange,
+    validateOnBlur = validateOnBlur,
+    validateOnMount = validateOnMount,
+    enableReinitialize = enableReinitialize,
+    valuesUpdater = valuesUpdater,
+    onError = onError,
+    key = key,
+    validateDebounceMs = validateDebounceMs,
+    validateAsync = validateAsync,
+    initialErrors = FormikErrors.Empty,
+    initialTouched = FormikTouched.Empty,
+    initialStatus = null,
+)
