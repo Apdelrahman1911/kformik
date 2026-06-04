@@ -248,7 +248,7 @@ gh release upload v1.4.0 /tmp/kformik-1.4.0-docs.zip
 - ❌ `:sample-android-app` — application module, no API surface.
 - ❌ Anything under `.private/` — local working notes, not for publication.
 
-Only `:kformik`, `:kformik-compose`, `:kformik-ksp` are published.
+Only `:kformik`, `:kformik-compose`, `:kformik-forms`, and `:kformik-ksp` are published.
 
 ## Known limitations before first real release
 
