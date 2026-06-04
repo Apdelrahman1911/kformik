@@ -92,4 +92,18 @@ class ValuesUpdaterHardeningTest {
             )
         }
     }
+
+    /**
+     * Regression guard against StackOverflow when a malformed schema produces an extreme path.
+     * `setRecursive` is non-tail recursive (allocates a fresh container at every level), so a
+     * 200k-segment path would blow the controller thread's stack before any explicit guard
+     * fires. The PathParser now caps segments at 256 — well above the deepest real form.
+     */
+    @Test
+    fun extremePathLength_failsClean_doesNotStackOverflow() {
+        val deep = (1..300).joinToString(".") { "a$it" }
+        assertFailsWith<IllegalArgumentException> {
+            MapValuesUpdater.setAt(mapOf<String, Any?>(), deep, "x")
+        }
+    }
 }

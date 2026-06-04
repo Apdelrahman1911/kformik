@@ -19,6 +19,18 @@ package io.kformik.internal
  */
 internal object PathParser {
 
+    /**
+     * Maximum number of segments a parsed path may contain. Forms in practice rarely exceed
+     * ~10 segments (the deepest reasonable real path looks like
+     * `"users[5].addresses[2].country"` — 4 segments). The cap exists to bound
+     * [MapValuesUpdater]'s `setRecursive`, which allocates a fresh container at every level
+     * and recurses non-tail; an unbounded input ("a.".repeat(200_000) from a malformed schema
+     * or a malicious caller) would StackOverflow the controller thread before any explicit
+     * guard fires. 256 is comfortably above the deepest real-world form and well below the
+     * default JVM stack frame budget.
+     */
+    private const val MAX_SEGMENTS = 256
+
     fun parse(path: String): List<String> {
         if (path.isEmpty()) return emptyList()
         val out = ArrayList<String>(4)
@@ -28,6 +40,9 @@ internal object PathParser {
 
         fun flush() {
             if (cur.isNotEmpty()) {
+                require(out.size < MAX_SEGMENTS) {
+                    "Path '$path' has too many segments (max $MAX_SEGMENTS)"
+                }
                 out.add(cur.toString())
                 cur.clear()
             }
