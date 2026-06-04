@@ -4,7 +4,7 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
-Ongoing v1.9.0 cycle on `harden/v1.9.0` — not yet tagged or published. Commits accumulate here; entries will be promoted to a versioned section when the release is cut. **Do NOT consider any item below a shipping promise** until v1.9.0 is tagged on `main`.
+## [1.9.0] — 2026-06-04
 
 ### Added (forms layer)
 
