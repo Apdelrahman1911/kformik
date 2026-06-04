@@ -99,12 +99,27 @@ public class FormValuesProcessor(private val env: SymbolProcessorEnvironment) : 
             decl.primaryConstructor != null &&
             Modifier.ABSTRACT !in decl.modifiers &&
             Modifier.SEALED !in decl.modifiers &&
-            decl.typeParameters.isEmpty()
+            decl.typeParameters.isEmpty() &&
+            // Member-level (nested-inside-another-class) data classes can't be used as @FormValues
+            // targets because emit() / emitUpdater() write the generated file at the package level
+            // and reference the type by its simple name. For an `inner class Inner` of `Outer`, the
+            // generated `InnerUpdater` would `cast to Inner` — uncompilable because `Inner` doesn't
+            // resolve from package scope. The generator would need to walk the parentDeclaration
+            // chain and emit `Outer.Inner` references throughout; until then, reject early with a
+            // clear KSPLogger error rather than silently emit broken code.
+            decl.parentDeclaration == null
 
     private fun unsupportedMessage(decl: KSClassDeclaration): String {
         val name = decl.qualifiedName?.asString() ?: decl.simpleName.asString()
-        return "@FormValues requires a concrete, non-generic `data class` with a primary constructor; " +
-            "'$name' is not supported (must not be a plain/sealed/abstract/enum/interface class or have type parameters)."
+        val parent = decl.parentDeclaration
+        return if (parent != null) {
+            "@FormValues requires a top-level `data class`; '$name' is nested inside " +
+                "'${parent.qualifiedName?.asString() ?: parent.simpleName.asString()}'. " +
+                "Move it to the file's top level to enable typed-path generation."
+        } else {
+            "@FormValues requires a concrete, non-generic `data class` with a primary constructor; " +
+                "'$name' is not supported (must not be a plain/sealed/abstract/enum/interface class or have type parameters)."
+        }
     }
 
     private fun emit(decl: KSClassDeclaration, byName: Map<String, KSClassDeclaration>) {

@@ -178,6 +178,38 @@ class FormValuesProcessorHardeningTest {
         assertTrue(result.messages.contains("@FormValues requires a concrete, non-generic"))
     }
 
+    /**
+     * Pre-fix the processor emitted `<Name>Paths.kt` / `<Name>Updater.kt` at the package level
+     * using the data class's simple name. For a member-level class (`data class Inner` inside
+     * `object Outer`), the generated `InnerUpdater` would reference `cast to Inner` from package
+     * scope — Inner isn't resolvable there, so the generated code wouldn't compile.
+     *
+     * Reject member-level declarations with a clear KSPLogger error instead.
+     */
+    @Test
+    fun memberLevelDataClass_isReported_notSilentlyMiscompiled() {
+        val src = SourceFile.kotlin(
+            "Container.kt",
+            """
+            package app
+            import io.kformik.ksp.FormValues
+            object Container {
+                @FormValues
+                data class Inner(val x: String)
+            }
+            """.trimIndent()
+        )
+        val (_, result) = runCompile(src)
+        assertFalse(
+            "a member-level @FormValues target must fail the build",
+            result.exitCode == KotlinCompilation.ExitCode.OK,
+        )
+        assertTrue(
+            "diagnostic must mention 'top-level' or 'nested'; was:\n${result.messages}",
+            result.messages.contains("top-level") || result.messages.contains("nested"),
+        )
+    }
+
     @Test
     fun nullableNestedFormValues_compiles_andRoundTrips() {
         val src = SourceFile.kotlin(
