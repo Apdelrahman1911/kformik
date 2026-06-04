@@ -356,6 +356,20 @@ fun EmailRow(form: ComposeFormik<Map<String, Any?>>) {
 
 For typed forms, `valueOf<T>(name)` and `fieldOfOrNull<T>(name)` give you a typed read without the `as? String` ceremony.
 
+#### Fire-and-forget submit + `onError`
+
+`ComposeFormik.submit()` / `resetForm()` are deliberately non-suspending so they can be wired into `onClick = { form.submit() }` without ceremony. Under the hood they call `controller.handleSubmit()` / `handleReset()`, which launch on the controller's scope. **Anything `onSubmit` throws on that path is silently swallowed** unless you opt into an `onError` sink:
+
+```kotlin
+val form = rememberFormik(
+    initialValues = mapOf<String, Any?>("email" to ""),
+    onSubmit = { v, _ -> api.login(v["email"] as String) },
+    onError = { t -> snackbar.show("Sign in failed: ${t.message}") },   // <- recommended
+)
+```
+
+Same shape on `FormikConfig.onError` for non-Compose callers, and on `KformikForm.onError` for the declarative form layer. If you stay inside a `scope.launch { form.submit() }` coroutine instead of the fire-and-forget path, exceptions propagate naturally and `onError` is optional.
+
 Working Android sample in [`sample-android-app/`](sample-android-app/). More patterns in [`docs/COMPOSE_USAGE.md`](docs/COMPOSE_USAGE.md).
 
 `:kformik-compose` runs a JVM-host Compose UI test rig (`runComposeUiTest`) covering `state` / `dirty` / `isValid` / `fieldState` / `enableReinitialize` — same `:kformik-compose:jvmTest` task already wired into CI; no emulator required.
@@ -384,6 +398,8 @@ KformikForm(
 Renders Material 3 widgets, wires up validation, gates the submit button on `isValid && !isSubmitting`. Ten field types ship: `Text`, `Email`, `Password`, `Multiline`, `Number`, `Checkbox`, `Switch`, `Select`, `Radio`, `Date`. Escape hatches: per-field `renderOverride`, custom `submitButton` slot, `footerSlot` for form-level error summaries, `onError` hook, server-side hydration via `initialErrors` / `initialTouched` / `initialStatus`, and pass-through for `validateDebounceMs` + `validateAsync`. Full reference in [`docs/FORMS_USAGE.md`](docs/FORMS_USAGE.md).
 
 Need finer-grained layout (custom containers, dividers between sections, manual submit button)? Drop down to `KformikFields(fields, form)` — same renderers, but it leaves the surrounding `Column` and submit-button slot to you. Useful when the default vertical-stack `KformikForm` layout doesn't fit.
+
+`Field.initialValue` defaults to the public sentinel `FieldDefaultValue` (meaning "no explicit value — use the type default"). Pass any value to override; pass `null` to store an explicit null (useful for `Select` / `Radio` to model a "— pick one —" placeholder with `SelectOption(value = null, label = "…")`, since `SelectOption.value` is `Any?`).
 
 The default renderers ship with **accessibility baked in**: `Modifier.toggleable` / `selectable` / `selectableGroup` for proper role + group announcements; an `error` text marked as a `liveRegion = LiveRegionMode.Polite` so screen readers announce newly-appearing validation errors when they land; a programmatic `stateDescription = "Required"` so TalkBack / VoiceOver announce required fields without depending on the visual `*` suffix.
 
