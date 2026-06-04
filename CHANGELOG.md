@@ -4,6 +4,16 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [1.9.1] — 2026-06-05
+
+### Fixed
+
+- **`ComposeFormik.launch { }` routes throwables through `FormikConfig.onError`**, mirroring `FormikController.handleSubmit` / `handleReset`. Pre-1.9.1 an uncaught throw inside the launched block crashed Kotlin/Native apps with SIGABRT (the default coroutine exception handler terminates the process) and surfaced on JVM via the default uncaught-exception handler — equally surprising given the rest of the fire-and-forget API surface. `CancellationException` continues to propagate so structured cancellation keeps working; other failures route to `FormikConfig.onError` when set, and are silently swallowed otherwise. No public-API change (`apiCheck` clean); KDoc on `ComposeFormik.launch` updated to document the routing.
+
+### Tests
+
+- 4 new regression tests in `ComposeFormikTest` covering the four behavioral corners: throw + onError set (routes), throw + no onError (silent swallow), `CancellationException` (NOT routed, rethrown), and clean completion (onError untouched).
+
 ## [1.9.0] — 2026-06-04
 
 ### Added (forms layer)
