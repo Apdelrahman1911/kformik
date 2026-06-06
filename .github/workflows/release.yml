@@ -102,7 +102,7 @@ jobs:
             :kformik-forms:assembleRelease \
             :kformik-forms:compileKotlinIosSimulatorArm64 \
             :kformik-ksp:test \
-            :sample-android-app:assembleDebug \
+            :sample-forms-cmp-app:assembleDebug \
             :examples:compileKotlin \
             apiCheck \
             --warning-mode=all

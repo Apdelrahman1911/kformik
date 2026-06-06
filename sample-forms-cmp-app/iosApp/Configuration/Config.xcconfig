@@ -1,0 +1,6 @@
+// Edit these to match your Apple Developer signing.
+// Bundle id MUST be unique to YOUR Apple ID — change the suffix if signing complains.
+// TEAM_ID is intentionally blank in the committed file — set it locally before building.
+TEAM_ID =
+BUNDLE_ID = io.kformik.sample.forms.iosApp
+APP_NAME = Kformik Forms Showcase

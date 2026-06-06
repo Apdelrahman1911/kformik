@@ -23,7 +23,7 @@ version = providers.gradleProperty("kformikVersion").get()
 // (wired into `check`) fails the build on an unintended public-ABI change. Non-published
 // demo modules are excluded.
 apiValidation {
-    ignoredProjects += listOf("examples", "sample-android-app")
+    ignoredProjects += listOf("examples", "sample-forms-cmp-app")
 }
 
 subprojects {

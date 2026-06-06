@@ -4,6 +4,36 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [1.9.2] — 2026-06-06
+
+### Fixed
+
+- **`ComposeFormik.fieldState(name)` no longer holds a stale flow after a `FormikController` rebuild.** The internal `remember(name) { controller.fieldFlow(name) }` was keyed only on `name`; when `KformikForm` rebuilt its controller (which happens whenever a `Field.initialValue` changes, because `controllerKey` includes `initialValue`), renderers in the same composition slot received the dead controller's flow and silently kept showing old values. Now keyed on `(name, controller)` so a fresh flow is captured on rebuild. Surfaces visibly when a consumer toggles between server-loaded and default state — the new initial values now reach every renderer. No public-API change; `apiCheck` clean.
+- **`NumberRenderer.displayBuffer` and `hadFocus` reset on controller rebuild.** Both were `remember(name) { mutableStateOf(...) }` so the user's stale typed text would overlay the new controller's canonical value, and the surviving `hadFocus = true` would mark the freshly-rebuilt field touched on the next blur with no user interaction. Now `remember(name, form) { ... }`.
+- **`blurTouches` helper's `hadFocus` flag resets on controller rebuild.** Same name-only-keyed pattern; same hazard for every text/email/password/multiline renderer. Now `remember(name, form) { ... }`.
+- **`SelectRenderer.expanded` resets on controller rebuild.** Was unkeyed; a dropdown open at the moment of rebuild stayed open over a freshly-initialized field. Now `remember(name, form) { ... }`.
+- **`DateRenderer` force-closes a stale picker dialog on controller rebuild.** Was unkeyed; a dialog open at the moment of rebuild could commit its previously-selected date into the new controller via OK. Added `LaunchedEffect(form) { showPicker = false }` so the unkeyed `rememberDatePickerState` is discarded along with the closed dialog.
+- **`rememberFormik` wraps `valuesUpdater` in `rememberUpdatedState`** for parity with `validate` / `validateAsync` / `schemaValidator` / `onSubmit` / `onReset` / `onError`. Inline `ValuesUpdater` instances that close over changing Compose state no longer freeze at first-composition captures across recompositions. Indirection is installed only when the caller actually supplied a `valuesUpdater`, so the FormikController's default `Map<String, Any?>` auto-resolution path is unaffected. Defensive (real-world `ValuesUpdater` is usually a stateless singleton — KSP-generated `<Name>Updater` or `MapValuesUpdater.Default`), but the previous asymmetry is now closed.
+
+### Changed
+
+- **iOS keyboard dismissal: three layered fixes covering every field type.**
+  - **Library (per-field Done key for single-line text + number renderers).** `TextRenderer` (Text / Email / Password — `singleLine = true`) and `NumberRenderer` set `imeAction = ImeAction.Done` with `keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })`. Multiline keeps `ImeAction.Default` so Return still inserts a newline. Every consumer of the default renderers gets the iOS Done key for free.
+  - **Sample app (tap-outside-to-dismiss via `Modifier.clickable` wrapper).** `ScaffoldUi.kt` wraps the form's `Column` in a `Box` whose modifier chain ends with `clickable(indication = null, interactionSource = …) { focusManager.clearFocus() }`. `Modifier.clickable` uses `awaitFirstDown(requireUnconsumed = true)` internally, so only taps no descendant claimed reach the wrapper. Interactive descendants (Button / Slider / TextField / Checkbox / dropdown / Date picker / submit button) keep their own touch handling. `indication = null` keeps the wrapper visually transparent. Earlier attempts: a sibling-`Spacer`-behind-Column pattern, which works on Android/Desktop but fails on Compose Multiplatform iOS because Box hit-testing doesn't fall through siblings when the top sibling has a pointer-input modifier (like `verticalScroll`). Important: the call uses `clearFocus()` WITHOUT `force = true` — on Compose Multiplatform iOS (1.7.x in particular), `clearFocus(force = true)` bypasses the cooperative-release path and pins focus to the root, after which no component can re-acquire focus and the UI becomes unresponsive. The default `clearFocus()` releases the focused composable cleanly and the focus tree stays usable for subsequent taps. Earlier attempts at scroll-to-dismiss (via `LaunchedEffect(scrollState.isScrollInProgress)`) and UIKit-side `UIPanGestureRecognizer`/`UISwipeGestureRecognizer` were tried and reverted: the scroll-based approach combined with `force = true` (and even without it on some iOS builds) created the focus-stuck regression; the UIKit recognizers never recognized at all because Compose Multiplatform's iOS view claims pan gestures exclusively. Tap-outside is the only approach that's been verified to dismiss reliably AND leave the UI fully responsive afterward. UIKit-side `UIPanGestureRecognizer` / `UISwipeGestureRecognizer` attached to the parent view OR the window did NOT work — Compose Multiplatform's iOS view installs its own gesture recognizer that claims pan gestures exclusively (verified via diagnostic logging: `gestureRecognizerShouldBegin` was asked and returned true, but the parent-level pan never transitioned to `.began`). Observing the scroll state at the Compose layer sidesteps that conflict entirely.
+
+### Removed
+
+- **`:sample-android-app` module** — the Android-only sample (login + registration) is superseded by the new `:sample-forms-cmp-app` Compose Multiplatform showcase, which covers the same scenarios and more (cross-field validation, async, custom rendering, every `:kformik-forms` field type) and runs on Android, Desktop, and iOS from one `commonMain` source. Removed everywhere it was referenced: `settings.gradle.kts` include, `build.gradle.kts` `apiValidation.ignoredProjects`, both CI workflows, `README.md`, `docs/RELEASE_PROCESS.md`. The previously-gated Robolectric Compose UI tests under `:sample-android-app/src/robolectricTest/` go with it — equivalent JVM-host Compose UI tests already live in `:kformik-compose/src/jvmTest/` (`runComposeUiTest`) and run on every CI build with no opt-in needed.
+
+### Added
+
+- **Public Compose Multiplatform showcase app at `sample-forms-cmp-app/`** — four screens demonstrating every important capability of `:kformik-forms`:
+  - **Login**: declarative-form baseline (Email + Password + Switch, `validateOnBlur`, `footerSlot`).
+  - **Signup**: cross-field password-match via `extraValidate`, Date picker, Checkbox with `custom { }` rule, auto-asterisks from `required = true`, custom password-strength rule via `custom { v, _ -> ... }`.
+  - **Profile**: every non-text widget (Select, Radio, Multiline, Number `asInt = true/false`), `enableReinitialize` server-reload pattern, `validateOnMount`, custom `submitButton` slot, `disabled` field.
+  - **Custom + Async**: `renderOverride` swapping in a Slider, `validateAsync` (fake server) gated by `validateDebounceMs = 400`, `onError` routing demoed via a deliberate submit throw.
+  - One commonMain source runs unchanged on Android, Desktop JVM, and iOS. Ships with a minimal Xcode shell at `sample-forms-cmp-app/iosApp/`. Not published to Maven Central.
+
 ## [1.9.1] — 2026-06-05
 
 ### Fixed

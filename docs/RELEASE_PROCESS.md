@@ -46,7 +46,7 @@ This is the original procedure — runs everything from your local machine. Docu
 
 ## Snapshot
 
-- **Current version:** `1.8.0` (single source of truth: `gradle.properties` → `kformikVersion=…`)
+- **Current version:** `1.9.2` (single source of truth: `gradle.properties` → `kformikVersion=…`)
 - **Group:** `io.github.apdelrahman1911` (verified via GitHub identity on Maven Central; single source of truth: `gradle.properties` → `kformikGroup=…`)
 - **Modules published:** `:kformik` (KMP — JVM, Android, iosX64, iosArm64, iosSimulatorArm64), `:kformik-compose` (KMP umbrella — Android, Desktop JVM, iosX64, iosArm64, iosSimulatorArm64; Android consumers auto-resolve the `android` variant via Gradle module metadata), `:kformik-forms` (KMP — same target set as `:kformik-compose`; added in v1.8.0), `:kformik-ksp` (JVM JAR)
 - **Local-Maven path:** `~/.m2/repository/io/github/apdelrahman1911/<artifact>/<version>/`
@@ -122,8 +122,8 @@ Publisher Portal:
 ./gradlew :kformik:allTests :kformik:iosSimulatorArm64Test \
           :kformik:compileKotlinIosX64 :kformik:compileKotlinIosArm64 \
           :kformik-compose:assembleRelease :kformik-compose:testReleaseUnitTest \
-          :kformik-ksp:test :sample-android-app:assembleDebug \
-          :sample-android-app:testDebugUnitTest \
+          :kformik-ksp:test :sample-forms-cmp-app:assembleDebug \
+          :sample-forms-cmp-app:compileKotlinDesktop \
           :examples:compileKotlin publishToMavenLocal
 # Expected: BUILD SUCCESSFUL, 0 warnings.
 
@@ -245,7 +245,7 @@ gh release upload v1.4.0 /tmp/kformik-1.4.0-docs.zip
 ## What NOT to publish
 
 - ❌ `:examples` — JVM examples module, intentionally has no `maven-publish` plugin.
-- ❌ `:sample-android-app` — application module, no API surface.
+- ❌ `:sample-forms-cmp-app` — Compose Multiplatform showcase app, no API surface.
 - ❌ Anything under `.private/` — local working notes, not for publication.
 
 Only `:kformik`, `:kformik-compose`, `:kformik-forms`, and `:kformik-ksp` are published.
@@ -253,7 +253,7 @@ Only `:kformik`, `:kformik-compose`, `:kformik-forms`, and `:kformik-ksp` are pu
 ## Known limitations before first real release
 
 1. **No release workflow** — `.github/workflows/ci.yml` runs tests/assemble/`apiCheck`/`publishToMavenLocal` on push + PR, but there is no `.github/workflows/release.yml`. A release workflow would need to invoke `publishToSonatype closeAndReleaseSonatypeStagingRepository` from a runner with the `SIGNING_*`/`SONATYPE_*` secrets configured.
-2. **Compose UI Robolectric tests are gated off by default** — they live in `:sample-android-app/src/robolectricTest/` and require `-PwithRobolectric=true` plus network access for the 158 MB native-runtime JAR.
+2. **Compose UI Robolectric tests** — previously gated on `:sample-android-app/src/robolectricTest/` (removed in v1.9.2 when the Android-only sample was retired in favor of `:sample-forms-cmp-app`). Equivalent JVM-host Compose UI tests live in `:kformik-compose/src/jvmTest/` (`runComposeUiTest`) and run on every CI build with no opt-in needed.
 3. **iOS device target (`iosArm64`)** compiles but its tests aren't run in CI — no physical device wired up. The simulator (`iosSimulatorArm64`) is.
 4. **KSP support is experimental** — flat + nested `@FormValues` data classes work; `List<...>` / `Map<...>` / sealed / generic types are not yet covered. See `docs/KSP_TYPED_PATHS.md`.
 

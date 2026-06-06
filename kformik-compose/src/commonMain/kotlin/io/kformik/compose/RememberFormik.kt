@@ -119,7 +119,15 @@ public class ComposeFormik<V> internal constructor(
      */
     @Composable
     public fun fieldState(name: String): State<FieldBinding<Any?>> {
-        val flow = remember(name) { controller.fieldFlow(name) }
+        // Key on `controller` as well as `name`: when `rememberFormik`'s `key` parameter changes
+        // (e.g. KformikForm rebuilds its controller because a Field's initialValue changed), the
+        // wrapping ComposeFormik is a new instance pointing at a new controller — but the renderer
+        // composables that call `form.fieldState(name)` live at the same composition slot, so a
+        // remember keyed only on `name` would return the flow from the *dead* controller and the
+        // renderer would silently keep displaying its old values. Including `controller` in the
+        // key forces a fresh flow when the controller is replaced, while preserving the cache
+        // across ordinary recompositions (same controller → same flow → same StateFlow subscription).
+        val flow = remember(name, controller) { controller.fieldFlow(name) }
         return flow.collectAsState()
     }
 
@@ -263,6 +271,14 @@ public fun <V> rememberFormik(
     val schemaValidatorState = rememberUpdatedState(schemaValidator)
     val onResetState = rememberUpdatedState(onReset)
     val onErrorState = rememberUpdatedState(onError)
+    // valuesUpdater is also wrapped for parity with the sibling lambdas above — without this, an
+    // inline `ValuesUpdater` that closes over changing Compose state would silently freeze at its
+    // first-composition captures until `key` changes and the controller is fully rebuilt. In
+    // practice ValuesUpdater is usually a stateless singleton (the KSP-generated `<Name>Updater`
+    // or `MapValuesUpdater.Default`), so this is mostly defensive; we still apply the indirection
+    // only when the caller actually supplied an updater, so the FormikController's default
+    // Map<String, Any?> auto-resolution path (FormikController.kt:166-167) is unaffected.
+    val valuesUpdaterState = rememberUpdatedState(valuesUpdater)
 
     val composeFormik = remember(key) {
         val controller = FormikController(
@@ -283,7 +299,18 @@ public fun <V> rememberFormik(
                 validateOnMount = validateOnMount,
                 validateDebounceMs = validateDebounceMs,
                 enableReinitialize = enableReinitialize,
-                valuesUpdater = valuesUpdater,
+                valuesUpdater = valuesUpdater?.let {
+                    object : ValuesUpdater<V> {
+                        override fun getAt(values: V, path: String): Any? =
+                            valuesUpdaterState.value!!.getAt(values, path)
+
+                        override fun setAt(values: V, path: String, value: Any?): V =
+                            valuesUpdaterState.value!!.setAt(values, path, value)
+
+                        override fun leafPaths(values: V): Set<String> =
+                            valuesUpdaterState.value!!.leafPaths(values)
+                    }
+                },
                 onError = { t -> onErrorState.value?.invoke(t) },
                 coroutineScope = scope,
             )

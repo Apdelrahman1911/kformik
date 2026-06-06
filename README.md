@@ -53,15 +53,15 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.apdelrahman1911:kformik:1.9.0")
+    implementation("io.github.apdelrahman1911:kformik:1.9.2")
 
     // Optional
-    implementation("io.github.apdelrahman1911:kformik-compose:1.9.0")  // Compose Multiplatform adapter
-    implementation("io.github.apdelrahman1911:kformik-forms:1.9.0")    // Declarative Map<String, Field> form layer
+    implementation("io.github.apdelrahman1911:kformik-compose:1.9.2")  // Compose Multiplatform adapter
+    implementation("io.github.apdelrahman1911:kformik-forms:1.9.2")    // Declarative Map<String, Field> form layer
 
     // KSP processor — needs BOTH compileOnly (for @FormValues import) and ksp (to run the processor)
-    compileOnly("io.github.apdelrahman1911:kformik-ksp:1.9.0")
-    ksp("io.github.apdelrahman1911:kformik-ksp:1.9.0")
+    compileOnly("io.github.apdelrahman1911:kformik-ksp:1.9.2")
+    ksp("io.github.apdelrahman1911:kformik-ksp:1.9.2")
 }
 ```
 
@@ -370,7 +370,7 @@ val form = rememberFormik(
 
 Same shape on `FormikConfig.onError` for non-Compose callers, and on `KformikForm.onError` for the declarative form layer. If you stay inside a `scope.launch { form.submit() }` coroutine instead of the fire-and-forget path, exceptions propagate naturally and `onError` is optional.
 
-Working Android sample in [`sample-android-app/`](sample-android-app/). More patterns in [`docs/COMPOSE_USAGE.md`](docs/COMPOSE_USAGE.md).
+Working Compose Multiplatform sample in [`sample-forms-cmp-app/`](sample-forms-cmp-app/) — 4 screens covering Login / Signup / Profile / Custom+Async on Android, Desktop, and iOS. More patterns in [`docs/COMPOSE_USAGE.md`](docs/COMPOSE_USAGE.md).
 
 `:kformik-compose` runs a JVM-host Compose UI test rig (`runComposeUiTest`) covering `state` / `dirty` / `isValid` / `fieldState` / `enableReinitialize` — same `:kformik-compose:jvmTest` task already wired into CI; no emulator required.
 
@@ -440,7 +440,7 @@ kformik/             core KMP library
 kformik-compose/     Compose Multiplatform adapter (Android / Desktop / iOS)
 kformik-forms/       Declarative Map<String, Field> form layer on top of :kformik-compose
 kformik-ksp/         KSP processor for typed paths + ValuesUpdater (experimental)
-sample-android-app/  Compose sample
+sample-forms-cmp-app/Compose Multiplatform showcase (4 screens × :kformik-forms, runs on Android/Desktop/iOS)
 examples/            10 runnable JVM examples
 docs/                topic-by-topic usage notes
 ```
@@ -456,13 +456,26 @@ docs/                topic-by-topic usage notes
 
 Other example names: `nested`, `async`, `typed`, `fieldlevel`, `dependent`, `debounced`.
 
+## Sample app
+
+```bash
+# Compose Multiplatform showcase — 4 screens covering every important :kformik-forms feature
+# (cross-field validation, async username check + debounce, custom rendering via Slider, all 10
+# field types). Runs on Android, Desktop JVM, and iOS from one commonMain:
+./gradlew :sample-forms-cmp-app:run             # Desktop
+./gradlew :sample-forms-cmp-app:installDebug    # Android device / emulator
+open sample-forms-cmp-app/iosApp/iosApp.xcodeproj  # iOS — set signing team in Configuration/Config.xcconfig
+```
+
+The CMP showcase ships its own [`sample-forms-cmp-app/README.md`](sample-forms-cmp-app/README.md) with a feature → screen matrix.
+
 ## Build
 
 ```bash
 ./gradlew :kformik:allTests :kformik:iosSimulatorArm64Test
 ./gradlew :kformik-compose:jvmTest :kformik-forms:jvmTest :kformik-ksp:test
 ./gradlew :kformik-compose:assembleRelease :kformik-forms:assembleRelease
-./gradlew :sample-android-app:assembleDebug
+./gradlew :sample-forms-cmp-app:assembleDebug :sample-forms-cmp-app:compileKotlinDesktop
 ./gradlew apiCheck                # binary-compat baselines for every module
 ./gradlew publishToMavenLocal     # signed artifacts under ~/.m2
 ```

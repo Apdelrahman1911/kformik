@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
@@ -35,11 +36,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -134,7 +137,12 @@ private fun blurTouches(
     form: ComposeFormik<Map<String, Any?>>,
     name: String,
 ): Modifier {
-    var hadFocus by remember(name) { mutableStateOf(false) }
+    // Key on `(name, form)`: when KformikForm rebuilds its FormikController (e.g. a Field's
+    // initialValue changed and the controllerKey flipped), `form` is a fresh ComposeFormik and
+    // we MUST reset `hadFocus` — otherwise the first blur against the new controller fires
+    // setFieldTouched on a field the user has not interacted with on this form, prematurely
+    // surfacing validation errors. See the matching pattern documented on ComposeFormik.fieldState.
+    var hadFocus by remember(name, form) { mutableStateOf(false) }
     return Modifier.onFocusChanged { fs ->
         if (fs.isFocused) {
             hadFocus = true
@@ -159,6 +167,7 @@ private fun TextRenderer(
     val binding by form.fieldState(name)
     val current = (binding.value as? String).orEmpty()
     val error = binding.displayError
+    val focusManager = LocalFocusManager.current
     OutlinedTextField(
         value = current,
         onValueChange = { form.setFieldValue(name, it) },
@@ -173,7 +182,19 @@ private fun TextRenderer(
         supportingText = supportingText(field, error),
         singleLine = singleLine,
         maxLines = maxLines,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        // Single-line fields get `imeAction = Done` so the iOS / Android software keyboard shows
+        // a Done key that dismisses the keyboard via `onDone -> clearFocus()`. Multiline fields
+        // keep `ImeAction.Default` so the Return key inserts a newline as expected. Without this,
+        // iOS users had no built-in way to dismiss the keyboard after typing into a text field —
+        // Compose Multiplatform's render surface is not a UIScrollView, so iOS's native
+        // swipe-down-to-dismiss gesture is not wired up automatically.
+        keyboardOptions = KeyboardOptions(
+            keyboardType = keyboardType,
+            imeAction = if (singleLine) ImeAction.Done else ImeAction.Default,
+        ),
+        keyboardActions = KeyboardActions(
+            onDone = { focusManager.clearFocus() },
+        ),
         visualTransformation = visual,
     )
 }
@@ -201,10 +222,16 @@ private fun NumberRenderer(
     // so the field resyncs to the canonical form once the user stops typing. Programmatic
     // setValue calls land in the canonical form immediately; the buffer only matters while the
     // user has focus.
-    var displayBuffer by remember(name) { mutableStateOf<String?>(null) }
-    var hadFocus by remember(name) { mutableStateOf(false) }
+    // Key on `(name, form)` so the local buffer + focus flag reset when KformikForm rebuilds its
+    // controller. Without `form` in the key, a parent flipping a Field's `initialValue` would
+    // keep the user's stale typed text overlaid on the NEW controller's fresh canonical value,
+    // and the surviving `hadFocus = true` would mark the freshly-rebuilt field touched on the
+    // next blur with no user interaction against it. Mirrors ComposeFormik.fieldState's pattern.
+    var displayBuffer by remember(name, form) { mutableStateOf<String?>(null) }
+    var hadFocus by remember(name, form) { mutableStateOf(false) }
     val display = displayBuffer ?: canonical
     val error = binding.displayError
+    val focusManager = LocalFocusManager.current
     OutlinedTextField(
         value = display,
         onValueChange = { input ->
@@ -246,8 +273,15 @@ private fun NumberRenderer(
         isError = error != null,
         supportingText = supportingText(field, error),
         singleLine = true,
+        // `imeAction = Done` + `onDone -> clearFocus` so iOS / Android show a Done key on the
+        // numeric keyboard that dismisses the IME (Compose Multiplatform's render surface is not
+        // a UIScrollView, so iOS's native swipe-down-to-dismiss is not wired up automatically).
         keyboardOptions = KeyboardOptions(
             keyboardType = if (asInt) KeyboardType.Number else KeyboardType.Decimal,
+            imeAction = ImeAction.Done,
+        ),
+        keyboardActions = KeyboardActions(
+            onDone = { focusManager.clearFocus() },
         ),
     )
 }
@@ -359,7 +393,9 @@ private fun SelectRenderer(
     form: ComposeFormik<Map<String, Any?>>,
     options: List<SelectOption>,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    // Key on `(name, form)` so a stale open dropdown collapses if the FormikController is rebuilt
+    // out from under us — otherwise the menu would remain open over a freshly-initialized field.
+    var expanded by remember(name, form) { mutableStateOf(false) }
     val binding by form.fieldState(name)
     val currentValue = binding.value
     val currentLabel = options.firstOrNull { it.value == currentValue }?.label ?: ""
@@ -488,6 +524,13 @@ private fun DateRenderer(
     val current = binding.value as? String
     val error = binding.displayError
     var showPicker by remember { mutableStateOf(false) }
+    // If KformikForm rebuilds the FormikController while the picker dialog is open (e.g., a parent
+    // flipped a Field's initialValue), force-close the dialog. Otherwise OK on the stale dialog
+    // would write the previously-selected date into the *new* controller — which is not the value
+    // the new controller was just seeded with. Once `showPicker` flips back to false, the
+    // `if (showPicker)` block leaves composition and the unkeyed `rememberDatePickerState`
+    // is discarded; reopening the picker reads the new controller's current value cleanly.
+    LaunchedEffect(form) { showPicker = false }
 
     // Detect taps anywhere on the field via the OutlinedTextField's interaction source.
     // `Modifier.clickable` on a `readOnly` OutlinedTextField is swallowed by the field's internal

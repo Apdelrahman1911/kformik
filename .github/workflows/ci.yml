@@ -36,7 +36,7 @@ jobs:
             :kformik-compose:jvmTest :kformik-compose:testReleaseUnitTest :kformik-compose:assembleRelease \
             :kformik-forms:jvmTest :kformik-forms:testReleaseUnitTest :kformik-forms:assembleRelease \
             :kformik-ksp:test \
-            :sample-android-app:assembleDebug \
+            :sample-forms-cmp-app:assembleDebug :sample-forms-cmp-app:compileKotlinDesktop \
             :examples:compileKotlin \
             --warning-mode=all
 
@@ -88,6 +88,8 @@ jobs:
             :kformik-compose:compileKotlinIosArm64 :kformik-compose:compileKotlinIosX64 \
             :kformik-forms:compileKotlinIosSimulatorArm64 \
             :kformik-forms:compileKotlinIosArm64 :kformik-forms:compileKotlinIosX64 \
+            :sample-forms-cmp-app:compileKotlinIosSimulatorArm64 \
+            :sample-forms-cmp-app:compileKotlinIosArm64 :sample-forms-cmp-app:compileKotlinIosX64 \
             --warning-mode=all
 
       - name: Upload test reports on failure

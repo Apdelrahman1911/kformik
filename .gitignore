@@ -29,6 +29,10 @@ captures/
 *.swp
 hs_err_pid*
 
+# --- Xcode (sample-forms-cmp-app/iosApp) ---
+**/xcuserdata/
+**/*.xcuserstate
+
 # --- Credentials & signing material ---
 # Real credentials live in ~/.gradle/gradle.properties (user-scoped).
 # These patterns block any accidental check-in inside the repo.
