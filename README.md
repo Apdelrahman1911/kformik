@@ -53,15 +53,15 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.apdelrahman1911:kformik:1.9.2")
+    implementation("io.github.apdelrahman1911:kformik:1.9.3")
 
     // Optional
-    implementation("io.github.apdelrahman1911:kformik-compose:1.9.2")  // Compose Multiplatform adapter
-    implementation("io.github.apdelrahman1911:kformik-forms:1.9.2")    // Declarative Map<String, Field> form layer
+    implementation("io.github.apdelrahman1911:kformik-compose:1.9.3")  // Compose Multiplatform adapter
+    implementation("io.github.apdelrahman1911:kformik-forms:1.9.3")    // Declarative Map<String, Field> form layer
 
     // KSP processor — needs BOTH compileOnly (for @FormValues import) and ksp (to run the processor)
-    compileOnly("io.github.apdelrahman1911:kformik-ksp:1.9.2")
-    ksp("io.github.apdelrahman1911:kformik-ksp:1.9.2")
+    compileOnly("io.github.apdelrahman1911:kformik-ksp:1.9.3")
+    ksp("io.github.apdelrahman1911:kformik-ksp:1.9.3")
 }
 ```
 
