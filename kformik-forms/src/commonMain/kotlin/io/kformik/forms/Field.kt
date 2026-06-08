@@ -45,7 +45,11 @@ import io.kformik.FieldRulesBuilder
  *  [FieldType.Switch], the first option's value for [FieldType.Select] / [FieldType.Radio].
  *  Passing an explicit `null` is distinct from omitting the parameter — it overrides the type
  *  default with `null` (useful for `FieldType.Select` / [FieldType.Radio] where `null` means "no
- *  option selected", as opposed to the implicit "first option").
+ *  option selected", as opposed to the implicit "first option"). NOTE: the initial-values `null`
+ *  IS preserved with the key intact at construction; a runtime `setFieldValue(name, null)` is
+ *  different — it PRUNES the key from the backing map (per the `MapValuesUpdater` contract).
+ *  Most consumers won't notice this; reach for it when distinguishing "no selection (key present,
+ *  value null)" from "field removed (key absent)" matters for your downstream code.
  * @property required when true, a `required()` rule is auto-prepended into the schema for this
  *  path **unless** [rules] already declares one (the convenience flag and explicit rule don't
  *  duplicate). Renderer also marks the label with a trailing `*`.

@@ -13,7 +13,16 @@ package io.kformik
  * `true`/`false` to force or suppress validation for that one call.
  */
 public interface FormikActions<V> {
-    /** Set the value at [name]. Runs validation per the `shouldValidate` convention above. */
+    /**
+     * Set the value at [name]. Runs validation per the `shouldValidate` convention above.
+     *
+     * **`null` semantics for `Map<String, Any?>` values:** writing `null` PRUNES the leaf from the
+     * backing map (per [ValuesUpdater] / [MapValuesUpdater] contract — set-then-clear restores the
+     * original map shape so `dirty` re-baselines correctly). After `setFieldValue(name, null)`,
+     * `state.values.containsKey(name) == false`, NOT `containsKey == true with value null`. An
+     * initial-values `null` (passed at construction or via `Field(initialValue = null)`) IS
+     * preserved with the key intact; the prune behavior applies only to runtime writes.
+     */
     suspend public fun setFieldValue(name: String, value: Any?, shouldValidate: Boolean? = null)
 
     /**
@@ -49,7 +58,17 @@ public interface FormikActions<V> {
     /** Set the freeform [status] object (e.g. a server message). Not interpreted by the controller. */
     public fun setStatus(status: Any?)
 
-    /** Set the `isSubmitting` flag directly (e.g. to re-enable a button after a custom flow). */
+    /**
+     * Set the `isSubmitting` flag directly (e.g. to re-enable a button after a custom flow).
+     *
+     * **This is a display flag only — it does NOT gate [submit].** The structural single-flight
+     * for `submit()` is an internal `Mutex` that is held for the duration of an in-flight submit;
+     * the `isSubmitting` boolean is a separately-managed display signal that consumers can flip
+     * to drive button-enabled state from a custom flow. Calling `setSubmitting(true)` does not
+     * cause a subsequent `submit()` to short-circuit — submit will run, take the structural lock,
+     * and overwrite the flag itself. If you want to PREVENT a submit, gate the call site (e.g.
+     * `Button(enabled = isValid && !isSubmitting)`); the controller does not enforce this for you.
+     */
     public fun setSubmitting(isSubmitting: Boolean)
 
     /** Atomic, lambda-based state update (escape hatch). Does not validate. */

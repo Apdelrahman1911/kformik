@@ -66,6 +66,14 @@ import kotlinx.coroutines.launch
  * underlying coroutines run on the scope returned by [rememberCoroutineScope] and are cancelled when
  * the composable leaves the composition (which is also what stops accepting mutations — see
  * [rememberFormik]).
+ *
+ * **Reading state inside a `@Composable`:** prefer the `@Composable`-getter forms ([state],
+ * [dirty], [isValid], [fieldState]) — they internally call `collectAsState()` and subscribe the
+ * surrounding Composable to recomposition on every emission. Reading the underlying `StateFlow`
+ * via [controller].state.value (or `controller.dirty.value` / `controller.isValid.value`) inside
+ * a Composable returns the current snapshot but does NOT trip Compose's subscription mechanism,
+ * so the Composable will not recompose when the flow emits. The `.value` accessors are for
+ * non-Composable contexts (suspending blocks, view-model glue, tests).
  */
 @Stable
 public class ComposeFormik<V> internal constructor(
