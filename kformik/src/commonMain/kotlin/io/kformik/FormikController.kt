@@ -340,7 +340,11 @@ public class FormikController<V>(
             // request, which is the correct semantics for a debounce.
             pipeline.tryEmit(values to gen)
         } else {
-            runAllValidationsAndCommit(values, gen)
+            // Fire-and-forget change-validation: route validator throws to onError instead of
+            // propagating up through the user-facing suspend setter (which is typically launched
+            // on a Compose scope that would be killed by an uncaught throw). The debounced branch
+            // above gets the same routing via the collector wired in init {} at line ~316.
+            runAllValidationsAndCommitRoutingErrors(values, gen)
         }
     }
 
@@ -594,7 +598,9 @@ public class FormikController<V>(
             gen = ++validationGeneration
             _state.value.values
         }
-        if (willValidate) runAllValidationsAndCommit(newValues, gen)
+        // Fire-and-forget blur validation: route validator throws to onError, same rationale as
+        // the non-debounced change branch in scheduleChangeValidation.
+        if (willValidate) runAllValidationsAndCommitRoutingErrors(newValues, gen)
     }
 
     override suspend fun setTouched(touched: FormikTouched, shouldValidate: Boolean?) {
@@ -606,7 +612,7 @@ public class FormikController<V>(
             gen = ++validationGeneration
             _state.value.values
         }
-        if (willValidate) runAllValidationsAndCommit(newValues, gen)
+        if (willValidate) runAllValidationsAndCommitRoutingErrors(newValues, gen)
     }
 
     override fun setFieldError(name: String, message: String?) {
@@ -704,6 +710,34 @@ public class FormikController<V>(
             return merged
         } finally {
             withContext(NonCancellable) { exitValidation() }
+        }
+    }
+
+    /**
+     * Background-trigger variant of [runAllValidationsAndCommit]. Used by fire-and-forget validation
+     * paths (change validation, blur, array mutations) where a throwing validator must not
+     * propagate out of the void-returning suspend setter and corrupt the caller's coroutine scope.
+     *
+     * Mirrors the exception-routing strategy of [handleSubmit] / [handleReset] / the debounced
+     * collector at the top of this controller's init block: [CancellationException] propagates so
+     * structured concurrency keeps working; every other [Throwable] is delivered to
+     * [FormikConfig.onError] (if set) and the run is treated as having committed no errors.
+     *
+     * Awaitable callers ([submit], [validateForm]) call [runAllValidationsAndCommit] directly so
+     * they retain their throw-to-caller contracts — see the Formik #1329 regression in
+     * `FormikIssueRegressionTest`. Returning [FormikErrors.Empty] here would be unsafe at those
+     * sites because [submit] uses `errors.isNotEmpty` to gate `onSubmit`; for fire-and-forget sites
+     * no such gate exists, so the dropped-on-the-floor result is the same shape as a
+     * `!scope.isActive` early-return at line 690.
+     */
+    private suspend fun runAllValidationsAndCommitRoutingErrors(values: V, gen: Long): FormikErrors {
+        return try {
+            runAllValidationsAndCommit(values, gen)
+        } catch (c: CancellationException) {
+            throw c
+        } catch (t: Throwable) {
+            config.onError?.invoke(t)
+            FormikErrors.Empty
         }
     }
 

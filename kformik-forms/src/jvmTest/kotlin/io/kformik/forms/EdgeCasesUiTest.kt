@@ -244,21 +244,12 @@ class EdgeCasesUiTest {
 
     @Test
     fun asyncValidator_throwing_routes_to_onError() = runComposeUiTest {
-        // The controller's debounced-validation path wraps `validateAsync` in a try/catch that
-        // routes throwables to `onError` (see FormikController.kt:319-321). Configuring
-        // `validateDebounceMs` is what wires up that catch — without it, the synchronous
-        // change-validation path lets a throw bubble through the fire-and-forget setFieldValue
-        // launch and is silently swallowed by the Compose scope. Tests asserting "throw goes to
-        // onError" therefore must configure debounce.
-        //
-        // KNOWN ASYMMETRY (surfaced by Pass 3 of the production-readiness test sweep, not yet
-        // fixed): without `validateDebounceMs`, a throwing `validateAsync` does NOT route to
-        // `onError` and also corrupts the Compose scope (subsequent recompositions hang). The
-        // sibling exception-routing paths (`handleSubmit`, `handleReset`, `ComposeFormik.launch`)
-        // all catch + route to `onError`; the non-debounced change-validation path does not.
-        // Fix candidate: wrap `controller.setFieldValue` / `setFieldTouched` invocations in
-        // `ComposeFormik` with the same try/catch pattern, OR route inside
-        // `runAllValidationsAndCommit` itself. Tracked separately from this tests-only pass.
+        // Debounced change-validation path: the debounce collector wraps validateAsync in
+        // try/catch and funnels throwables to `onError`. Pinned at validateDebounceMs = 30 here to
+        // document the debounced route end-to-end; the no-debounce sibling lives in
+        // `asyncValidator_throwing_routes_to_onError_noDebounce` below and exercises the
+        // `runAllValidationsAndCommitRoutingErrors` wrapper on the synchronous setFieldValue
+        // branch instead.
         var caught: Throwable? = null
         var captured: ComposeFormik<Map<String, Any?>>? = null
         renderHost(
@@ -273,6 +264,51 @@ class EdgeCasesUiTest {
         waitUntil(timeoutMillis = 2_000) { caught != null }
         assertNotNull(caught)
         assertEquals("async-bad", caught!!.message)
+    }
+
+    @Test
+    fun asyncValidator_throwing_routes_to_onError_noDebounce() = runComposeUiTest {
+        // Issue #2 load-bearing regression: without `validateDebounceMs`, change-validation runs
+        // synchronously on the setFieldValue path. Before the fix, a throwing `validateAsync`
+        // would propagate out of the fire-and-forget launch, corrupt the Compose scope, and the
+        // UI test runner would HANG waiting for idle. With the
+        // `runAllValidationsAndCommitRoutingErrors` wrapper in place (see FormikController.kt:347),
+        // the throw routes to `onError` and the scope stays alive.
+        var caught: Throwable? = null
+        var captured: ComposeFormik<Map<String, Any?>>? = null
+        renderHost(
+            fields = mapOf("x" to Field(type = FieldType.Text, label = "X")),
+            sink = { captured = it },
+            validateAsync = { _ -> throw IllegalStateException("async-bad") },
+            onError = { caught = it },
+        )
+        waitForIdle()
+        captured!!.setFieldValue("x", "anything")
+        waitUntil(timeoutMillis = 2_000) { caught != null }
+        assertNotNull(caught)
+        assertEquals("async-bad", caught!!.message)
+    }
+
+    @Test
+    fun blur_throwingValidateAsync_routes_to_onError_noDebounce() = runComposeUiTest {
+        // Sibling of `asyncValidator_throwing_routes_to_onError_noDebounce` for the blur path.
+        // `setFieldTouched` (also `setTouched`) runs the same fire-and-forget validation as the
+        // change path and was equally broken before the issue #2 fix. The
+        // `runAllValidationsAndCommitRoutingErrors` wrapper at FormikController.kt:603 is what
+        // makes this assertion reachable without the scope hanging.
+        var caught: Throwable? = null
+        var captured: ComposeFormik<Map<String, Any?>>? = null
+        renderHost(
+            fields = mapOf("x" to Field(type = FieldType.Text, label = "X")),
+            sink = { captured = it },
+            validateAsync = { _ -> throw IllegalStateException("blur-async-bad") },
+            onError = { caught = it },
+        )
+        waitForIdle()
+        captured!!.setFieldTouched("x", true)
+        waitUntil(timeoutMillis = 2_000) { caught != null }
+        assertNotNull(caught)
+        assertEquals("blur-async-bad", caught!!.message)
     }
 
     @Test

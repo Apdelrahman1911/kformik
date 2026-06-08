@@ -233,6 +233,48 @@ class ComposeFormikLifecycleTest {
         assertNull(after.errors["x"], "post-disposal validate must not write an error")
         assertEquals(before.values["x"], after.values["x"], "no late value mutation post-disposal")
     }
+
+    /**
+     * Pins the `onReset` parameter wiring through the Compose adapter. `rememberFormik` routes
+     * `onReset` into `FormikConfig` via `onResetState` (rememberUpdatedState) at
+     * `RememberFormik.kt:272,296`. Without this test, a future refactor could silently drop the
+     * wire-up (the lambda is captured but never invoked) and only the core `ResetTest` would catch
+     * it — and only for the controller layer, not the Compose adapter.
+     */
+    @Test
+    fun onReset_callback_firesOnResetForm() = runComposeUiTest {
+        var resetCount = 0
+        var resetSnapshot: Map<String, Any?>? = null
+        val sink = arrayOfNulls<ComposeFormik<Map<String, Any?>>>(1)
+        setContent {
+            val form = rememberFormik(
+                initialValues = mapOf<String, Any?>("email" to "initial@example.com"),
+                onSubmit = { _, _ -> },
+                onReset = { values, _ ->
+                    resetCount++
+                    resetSnapshot = values
+                },
+            )
+            sink[0] = form
+        }
+        waitForIdle()
+        val form = assertNotNull(sink[0])
+        // Edit, then reset.
+        form.setFieldValue("email", "edited@example.com")
+        waitForIdle()
+        form.resetForm()
+        waitUntil(timeoutMillis = 2_000) { resetCount == 1 }
+        assertEquals(1, resetCount, "onReset must fire exactly once per resetForm() through the Compose adapter")
+        // onReset receives the PRE-RESET (current) snapshot per FormikController.handleReset
+        // contract — see ResetTest.resetForm_invokesOnReset_withCurrentValues.
+        assertEquals(
+            "edited@example.com",
+            resetSnapshot?.get("email"),
+            "onReset must receive the pre-reset values snapshot",
+        )
+        // Post-reset state is back to the initial baseline.
+        assertEquals("initial@example.com", form.value("email"))
+    }
 }
 
 @Composable

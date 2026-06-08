@@ -251,4 +251,119 @@ class EdgeCasesTest {
         runCurrent()
         assertNull(c.state.value.errors["name"])
     }
+
+    // ---- issue #2: non-debounced change/touch paths route validator throws to onError ---------
+    // Sibling tests to validator_throwingException_inSyncValidate_routes_to_onError (which uses
+    // debounce=10L to work around the pre-fix bug). The non-debounced change branch and the
+    // setFieldTouched / setTouched / applyArrayMutation paths all now route validator throws
+    // through onError instead of corrupting the scope. If the fix is reverted (call sites swap
+    // back to runAllValidationsAndCommit) each of these tests fails: either caught stays null
+    // (the throw escaped the suspend frame and tore down the scope before assignment) or the
+    // follow-up assertion that the controller is still alive fails.
+
+    @Test
+    fun setFieldValue_throwingValidate_routes_to_onError_no_debounce() = runTest {
+        var caught: Throwable? = null
+        val c = mapCtrl(
+            this,
+            mapOf<String, Any?>("x" to ""),
+            validate = { _ -> throw IllegalStateException("change-boom") },
+            onError = { t -> caught = t },
+        )
+        c.setFieldValue("x", "v")
+        advanceUntilIdle()
+        assertNotNull(caught, "validator throw must be funneled to onError")
+        assertEquals("change-boom", caught!!.message)
+
+        // Scope must still be alive — a second setFieldValue lands and updates state.
+        c.setFieldValue("x", "w")
+        advanceUntilIdle()
+        assertEquals("w", c.valueAt("x"), "controller survives a non-debounced validator throw")
+    }
+
+    @Test
+    fun setFieldValue_throwingValidateAsync_routes_to_onError_no_debounce() = runTest {
+        var caught: Throwable? = null
+        val c = mapCtrl(
+            this,
+            mapOf<String, Any?>("x" to ""),
+            validateAsync = { _ -> throw IllegalStateException("async-boom") },
+            onError = { t -> caught = t },
+        )
+        c.setFieldValue("x", "v")
+        advanceUntilIdle()
+        assertNotNull(caught, "async validator throw must be funneled to onError")
+        assertEquals("async-boom", caught!!.message)
+
+        c.setFieldValue("x", "w")
+        advanceUntilIdle()
+        assertEquals("w", c.valueAt("x"), "controller survives a non-debounced async validator throw")
+    }
+
+    @Test
+    fun setFieldTouched_throwingValidator_routes_to_onError_no_debounce() = runTest {
+        var caught: Throwable? = null
+        val c = mapCtrl(
+            this,
+            mapOf<String, Any?>("x" to "", "y" to ""),
+            validate = { _ -> throw IllegalStateException("blur-boom") },
+            onError = { t -> caught = t },
+        )
+        c.setFieldTouched("x", true)
+        advanceUntilIdle()
+        assertNotNull(caught, "blur-path validator throw must be funneled to onError")
+        assertEquals("blur-boom", caught!!.message)
+
+        // Scope still alive — another touch on a different field lands.
+        c.setFieldTouched("y", true)
+        advanceUntilIdle()
+        assertTrue(c.state.value.touched["y"], "controller survives setFieldTouched validator throw")
+    }
+
+    @Test
+    fun setTouched_throwingValidator_routes_to_onError_no_debounce() = runTest {
+        var caught: Throwable? = null
+        val c = mapCtrl(
+            this,
+            mapOf<String, Any?>("a" to "", "b" to "", "c" to ""),
+            validate = { _ -> throw IllegalStateException("touched-map-boom") },
+            onError = { t -> caught = t },
+        )
+        c.setTouched(FormikTouched(mapOf("a" to true, "b" to true)))
+        advanceUntilIdle()
+        assertNotNull(caught, "setTouched validator throw must be funneled to onError")
+        assertEquals("touched-map-boom", caught!!.message)
+
+        // Scope still alive — a follow-up setFieldTouched lands.
+        c.setFieldTouched("c", true)
+        advanceUntilIdle()
+        assertTrue(c.state.value.touched["c"], "controller survives setTouched validator throw")
+    }
+
+    @Test
+    fun applyArrayMutation_throwingValidator_routes_to_onError_no_debounce() = runTest {
+        // Locks in transitive coverage: FieldArrayController.push -> applyArrayMutation ->
+        // scheduleChangeValidation. Without the routing wrapper a validator throw from a
+        // field-array mutation would escape the suspend frame and corrupt the scope.
+        var caught: Throwable? = null
+        val c = mapCtrl(
+            this,
+            mapOf<String, Any?>("items" to listOf<Any?>("first")),
+            validate = { _ -> throw IllegalStateException("array-boom") },
+            onError = { t -> caught = t },
+        )
+        c.array("items").push("new")
+        advanceUntilIdle()
+        assertNotNull(caught, "field-array mutation validator throw must be funneled to onError")
+        assertEquals("array-boom", caught!!.message)
+
+        // Scope still alive — a subsequent setFieldValue lands.
+        c.setFieldValue("items", listOf<Any?>("replaced"))
+        advanceUntilIdle()
+        assertEquals(
+            listOf<Any?>("replaced"),
+            c.valueAt("items"),
+            "controller survives array-mutation validator throw",
+        )
+    }
 }
