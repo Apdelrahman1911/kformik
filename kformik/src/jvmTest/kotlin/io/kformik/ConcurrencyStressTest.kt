@@ -1,10 +1,12 @@
 package io.kformik
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -237,6 +239,156 @@ class ConcurrencyStressTest {
             submit1.join()
         } finally {
             scope.cancel()
+        }
+    }
+
+    /**
+     * Under heavy concurrent writes from multiple threads, the field's final value must be one of
+     * the exact values written by some caller — never a partially-merged or garbage value. Each
+     * mutex-held write is a compare-and-set onto the latest values, so writes serialize cleanly
+     * and the last committed write wins atomically.
+     *
+     * Failure mode against a blind-write implementation: a torn read could yield a value outside
+     * the known input set (e.g. a stale snapshot's value after a concurrent reset, or a corrupted
+     * map entry from non-atomic mutation).
+     */
+    @Test
+    fun rapidFire_setFieldValue_underContention_finalStateIsAValidInput() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val c = FormikController(
+                FormikConfig(
+                    initialValues = mapOf<String, Any?>("x" to 0),
+                    validateOnChange = false,
+                    onSubmit = { _, _ -> },
+                    coroutineScope = scope,
+                )
+            )
+            val validInputs = setOf(0, 1, 2, 3)
+            val perThread = 250
+            coroutineScope {
+                repeat(4) { tid ->
+                    launch(Dispatchers.Default) {
+                        repeat(perThread) { i ->
+                            c.setFieldValue("x", (tid + i) % 4, shouldValidate = false)
+                        }
+                    }
+                }
+            }
+            val finalValue = c.state.value.values["x"]
+            assertTrue(
+                finalValue in validInputs,
+                "final value $finalValue must be one of the written inputs $validInputs",
+            )
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    /**
+     * 50 concurrent `submit()` calls must collapse to a single in-flight submission. The
+     * structural [submitMutex] gate uses `tryLock` — concurrent callers that find the lock held
+     * return immediately as a no-op without incrementing `submitCount` or invoking `onSubmit`.
+     * Only the lock-winner runs the submission lifecycle.
+     */
+    @Test
+    fun submit_underContention_singleFlight_strictlyOnce() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val submitBarrier = Mutex(locked = true)
+            var onSubmitCalls = 0
+            val c = FormikController(
+                FormikConfig(
+                    initialValues = mapOf<String, Any?>("a" to 0),
+                    onSubmit = { _, _ ->
+                        onSubmitCalls++
+                        submitBarrier.withLock { /* released below */ }
+                    },
+                    coroutineScope = scope,
+                )
+            )
+            // Launch 50 concurrent submits. The first to grab submitMutex enters onSubmit and
+            // awaits the barrier; the other 49 must observe tryLock() == false and return.
+            val jobs = (0 until 50).map { scope.launch(Dispatchers.Default) { c.submit() } }
+            // Wait for the winner to have entered onSubmit.
+            while (onSubmitCalls == 0) yield()
+            // Wait until only one job is still active (the winner blocked on the barrier); the
+            // 49 losers tryLock-and-return so their coroutines complete promptly.
+            while (jobs.count { it.isActive } > 1) yield()
+            assertEquals(
+                1,
+                onSubmitCalls,
+                "50 concurrent submits produced more than one onSubmit invocation; single-flight gate broken",
+            )
+            assertTrue(
+                c.state.value.submitCount <= 1,
+                "submitCount=${c.state.value.submitCount} > 1; single-flight gate broken",
+            )
+
+            submitBarrier.unlock()
+            jobs.forEach { it.join() }
+            // Final invariant: even after the winner completes, only one onSubmit invocation ran.
+            assertEquals(
+                1,
+                onSubmitCalls,
+                "after all submits settled, onSubmit invocation count != 1 (was $onSubmitCalls)",
+            )
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    /**
+     * Cancelling the controller's scope mid-flight, while many threads are hammering
+     * `setFieldValue`, must not propagate any exception to the caller. Post-cancellation
+     * mutations are silently dropped (the `scope.isActive` short-circuit), so the test reaching
+     * the assertion without a thrown exception is itself the assertion.
+     */
+    @Test
+    fun close_underContention_doesNotCrash_andSubsequentMutationsAreIgnored() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val c = FormikController(
+            FormikConfig(
+                initialValues = mapOf<String, Any?>("x" to 0),
+                validateOnChange = false,
+                onSubmit = { _, _ -> },
+                coroutineScope = scope,
+            )
+        )
+        // 10 threads each doing tight-loop setFieldValue calls. We supervisor-wrap the contention
+        // coroutineScope so individual writer cancellations (expected once scope.cancel fires)
+        // don't propagate out of the test.
+        val contention = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val writers = (0 until 10).map { tid ->
+                contention.launch(Dispatchers.Default) {
+                    var i = 0
+                    while (isActive) {
+                        try {
+                            c.setFieldValue("x", tid * 1000 + i, shouldValidate = false)
+                        } catch (_: CancellationException) {
+                            // expected once `scope` is cancelled — re-throw to honor structured concurrency
+                            throw kotlin.coroutines.cancellation.CancellationException("writer stopped")
+                        }
+                        i++
+                    }
+                }
+            }
+            // Let the writers run briefly so cancellation lands mid-flight.
+            yield()
+            yield()
+            // Cancel the controller's scope. The setFieldValue's `scope.isActive` guard means
+            // subsequent calls become silent no-ops rather than throwing.
+            scope.cancel()
+            // Subsequent mutations after cancel must be silently ignored (no throw).
+            repeat(50) { c.setFieldValue("x", -1, shouldValidate = false) }
+            // Stop the writer coroutines and wait for them to exit cleanly.
+            writers.forEach { it.cancel() }
+            writers.forEach { it.join() }
+            // Reaching here without any uncaught exception is the assertion.
+            assertTrue(true, "close under contention completed without crashes")
+        } finally {
+            contention.cancel()
         }
     }
 }

@@ -49,6 +49,13 @@ kotlin {
             implementation(kotlin("test-junit"))
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
             implementation("junit:junit:4.13.2")
+            // Compose Multiplatform's headless UI test harness — `runComposeUiTest { ... }`
+            // works on JVM via a Swing-based renderer; no display server / xvfb required.
+            // Lets the renderer + KformikForm integration tests drive setContent / onNodeWith… /
+            // perform… on the same Material 3 surface consumers ship.
+            @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+            implementation(compose.uiTest)
+            implementation(compose.desktop.currentOs)
         }
     }
 }

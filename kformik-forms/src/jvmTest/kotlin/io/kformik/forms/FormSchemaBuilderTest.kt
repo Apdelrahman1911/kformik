@@ -173,4 +173,203 @@ class FormSchemaBuilderTest {
         val errs = schema.validate(mapOf("accept" to false))
         assertNull(errs["accept"], "required() doesn't fire on Boolean false; use a custom rule for 'must be true'")
     }
+
+    /**
+     * Schema's `validate` reads through `MapValuesUpdater.getAt` for `Map<*, *>` values, which
+     * parses `"user.email"` into segments `[user, email]` and walks the nested map. So a nested
+     * input shape (matching what [buildInitialValuesFrom] produces for nested-path keys) resolves
+     * correctly and the per-field error attaches at the full dotted path.
+     */
+    @Test
+    fun nested_paths_in_Field_name_validate_correctly() = runTest {
+        val fields = mapOf("user.email" to Field(type = FieldType.Email, rules = { email() }))
+        val schema = buildSchemaFrom(fields)
+
+        val errs = schema.validate(mapOf("user" to mapOf("email" to "bad")))
+        assertEquals(
+            "Invalid email",
+            errs["user.email"],
+            "nested-path rule should resolve via MapValuesUpdater and attach at 'user.email'",
+        )
+
+        val ok = schema.validate(mapOf("user" to mapOf("email" to "a@b.co")))
+        assertNull(ok["user.email"], "valid nested email should pass")
+    }
+
+    @Test
+    fun field_with_no_rules_block_passes_validation_when_required_false() = runTest {
+        val fields = mapOf("name" to Field(type = FieldType.Text)) // required defaults to false
+        val schema = buildSchemaFrom(fields)
+        val errs = schema.validate(mapOf("name" to ""))
+        assertNull(errs["name"], "no rules + required=false → empty string is fine")
+        assertTrue(errs.byPath.isEmpty(), "no errors anywhere on the form")
+    }
+
+    @Test
+    fun field_with_required_true_and_no_rules_block_still_injects_required() = runTest {
+        val fields = mapOf("name" to Field(type = FieldType.Text, required = true))
+        val schema = buildSchemaFrom(fields)
+        val errs = schema.validate(mapOf("name" to ""))
+        assertEquals("Required", errs["name"], "Field.required=true with no rules block still injects required()")
+    }
+
+    @Test
+    fun field_with_required_true_and_custom_message_overrides_default() = runTest {
+        val fields = mapOf(
+            "name" to Field(
+                type = FieldType.Text,
+                required = true,
+                rules = { required("Name is mandatory") },
+            ),
+        )
+        val schema = buildSchemaFrom(fields)
+        val errs = schema.validate(mapOf("name" to ""))
+        assertEquals(
+            "Name is mandatory",
+            errs["name"],
+            "user's custom required() message should override the default 'Required'",
+        )
+    }
+
+    /**
+     * Rules registered in a field's block run in declaration order; the schema's first-failing-rule
+     * contract means the earlier-declared rule's message wins when both fail. Documenting this
+     * order-sensitive behavior keeps refactors from accidentally reordering the rule list.
+     */
+    @Test
+    fun field_with_email_chained_with_minLength_appliesBoth_inOrder() = runTest {
+        val fields = mapOf(
+            "addr" to Field(
+                type = FieldType.Email,
+                rules = {
+                    email()
+                    minLength(5)
+                },
+            ),
+        )
+        val schema = buildSchemaFrom(fields)
+
+        // "a@b.c" — passes email (one @, dot in domain), length 5 → no error
+        val okErrs = schema.validate(mapOf("addr" to "a@b.c"))
+        assertNull(okErrs["addr"], "valid email of exactly minLength should pass both rules")
+
+        // "x" — fails email AND fails minLength; email is declared first → its message wins
+        val badErrs = schema.validate(mapOf("addr" to "x"))
+        assertEquals(
+            "Invalid email",
+            badErrs["addr"],
+            "first-declared rule (email) wins fail-fast over later-declared minLength",
+        )
+    }
+
+    @Test
+    fun field_with_min_max_numeric_rules_apply_correctly() = runTest {
+        val fields = mapOf(
+            "score" to Field(
+                type = FieldType.Number(asInt = true),
+                rules = {
+                    min(10)
+                    max(100)
+                },
+            ),
+        )
+        val schema = buildSchemaFrom(fields)
+
+        val tooLow = schema.validate(mapOf("score" to 5))
+        assertEquals("Must be at least 10", tooLow["score"], "5 < 10 should fail min")
+
+        val inRange = schema.validate(mapOf("score" to 50))
+        assertNull(inRange["score"], "50 is in [10, 100], should pass")
+
+        val tooHigh = schema.validate(mapOf("score" to 150))
+        assertEquals("Must be at most 100", tooHigh["score"], "150 > 100 should fail max")
+    }
+
+    @Test
+    fun field_with_customValue_accessing_value_works() = runTest {
+        val fields = mapOf(
+            "n" to Field(
+                type = FieldType.Number(asInt = true),
+                rules = {
+                    customValue("even") { v -> if ((v as? Int)?.rem(2) == 0) null else "Must be even" }
+                },
+            ),
+        )
+        val schema = buildSchemaFrom(fields)
+
+        assertNull(schema.validate(mapOf("n" to 4))["n"], "even value passes")
+        assertEquals("Must be even", schema.validate(mapOf("n" to 5))["n"], "odd value fails")
+    }
+
+    @Test
+    fun field_with_custom_accessing_allValues_works() = runTest {
+        val fields = mapOf(
+            "pwd" to Field(type = FieldType.Password),
+            "cnf" to Field(
+                type = FieldType.Password,
+                rules = {
+                    custom("matchPwd") { v, allValues ->
+                        if (v == allValues["pwd"]) null else "Mismatch"
+                    }
+                },
+            ),
+        )
+        val schema = buildSchemaFrom(fields)
+
+        val mismatch = schema.validate(mapOf("pwd" to "secret", "cnf" to "different"))
+        assertEquals("Mismatch", mismatch["cnf"], "custom rule should see both fields via allValues")
+
+        val ok = schema.validate(mapOf("pwd" to "secret", "cnf" to "secret"))
+        assertNull(ok["cnf"], "matching passwords should pass the cross-field custom rule")
+    }
+
+    @Test
+    fun field_with_pattern_rule_appliesRegex() = runTest {
+        val fields = mapOf(
+            "code" to Field(
+                type = FieldType.Text,
+                rules = { pattern(Regex("^[A-Z]+$")) },
+            ),
+        )
+        val schema = buildSchemaFrom(fields)
+
+        assertNull(schema.validate(mapOf("code" to "ABC"))["code"], "uppercase only string matches")
+        assertEquals(
+            "Does not match pattern",
+            schema.validate(mapOf("code" to "abc"))["code"],
+            "lowercase string does not match ^[A-Z]+$",
+        )
+    }
+
+    /**
+     * Pins the documented default-value contract for [FieldType.Select]: omitting [Field.initialValue]
+     * picks the first option's value; passing `initialValue = null` explicitly preserves null
+     * (the "no selection" escape hatch). Pre-1.9.0 used `?:` and so explicit-null silently fell
+     * back to the first option — this test guards against that regression.
+     */
+    @Test
+    fun select_default_is_firstOption_unless_explicitNull() = runTest {
+        val opts = listOf(SelectOption("a", "A"), SelectOption("b", "B"))
+
+        val implicit = buildInitialValuesFrom(mapOf("pick" to Field(type = FieldType.Select(opts))))
+        assertEquals("a", implicit["pick"], "Select with no initialValue defaults to first option's value")
+
+        val explicit = buildInitialValuesFrom(
+            mapOf("pick" to Field(type = FieldType.Select(opts), initialValue = null)),
+        )
+        assertNull(explicit["pick"], "explicit initialValue=null is preserved verbatim (no first-option fallback)")
+    }
+
+    @Test
+    fun radio_default_same_contract() = runTest {
+        val opts = listOf(SelectOption("x", "X"), SelectOption("y", "Y"))
+
+        val implicit = buildInitialValuesFrom(mapOf("choice" to Field(type = FieldType.Radio(opts))))
+        assertEquals("x", implicit["choice"], "Radio with no initialValue defaults to first option's value")
+
+        val explicit = buildInitialValuesFrom(
+            mapOf("choice" to Field(type = FieldType.Radio(opts), initialValue = null)),
+        )
+        assertNull(explicit["choice"], "explicit initialValue=null is preserved verbatim for Radio too")
+    }
 }
