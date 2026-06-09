@@ -53,15 +53,15 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.apdelrahman1911:kformik:1.9.3")
+    implementation("io.github.apdelrahman1911:kformik:1.10.0")
 
     // Optional
-    implementation("io.github.apdelrahman1911:kformik-compose:1.9.3")  // Compose Multiplatform adapter
-    implementation("io.github.apdelrahman1911:kformik-forms:1.9.3")    // Declarative Map<String, Field> form layer
+    implementation("io.github.apdelrahman1911:kformik-compose:1.10.0")  // Compose Multiplatform adapter
+    implementation("io.github.apdelrahman1911:kformik-forms:1.10.0")    // Declarative Map<String, Field> form layer
 
     // KSP processor — needs BOTH compileOnly (for @FormValues import) and ksp (to run the processor)
-    compileOnly("io.github.apdelrahman1911:kformik-ksp:1.9.3")
-    ksp("io.github.apdelrahman1911:kformik-ksp:1.9.3")
+    compileOnly("io.github.apdelrahman1911:kformik-ksp:1.10.0")
+    ksp("io.github.apdelrahman1911:kformik-ksp:1.10.0")
 }
 ```
 
@@ -243,6 +243,116 @@ val form = rememberFormik(
     onSubmit = { /* … */ },
 )
 ```
+
+#### Backend-driven rules (v1.10.0+)
+
+When your backend ships validation metadata (`age` requires `min: 18, max: 60`; `username` adds a server-side `serverUniqueCheck`), you typically don't want to hardcode each constraint at the call site. A `RuleRegistry` maps named rules to handlers and lets you apply rule descriptors (`RuleSpec(name, params)`) inside any existing `field { … }` or `Field.rules` block — composing on top of the same DSL, no separate code path.
+
+**`Field` and `KformikForm` public APIs are unchanged in v1.10.0.** The registry composes via the existing `rules` lambda — `Field(rules = { specs(registry, specsFromBackend) })` — so no data-class ABI churn, no `@Composable` signature break, no migration. Existing forms keep working untouched.
+
+**Built-in rules.** Calling `ruleRegistry()` (or `ruleRegistry { … }`) seeds the seven declarative built-ins from the schema DSL:
+
+| Spec name | Params | Maps to |
+|---|---|---|
+| `required` | `message?` | `required(message)` |
+| `minLength` | `value: Int`, `message?` | `minLength(value, message)` |
+| `maxLength` | `value: Int`, `message?` | `maxLength(value, message)` |
+| `email` | `message?` | `email(message)` |
+| `pattern` | `value: Regex \| String`, `message?` | `pattern(Regex(value), message)` |
+| `min` | `value: Number`, `message?` | `min(value, message)` |
+| `max` | `value: Number`, `message?` | `max(value, message)` |
+
+`custom` and `customValue` are intentionally **not** registry citizens — a backend-resolvable `custom` would have to carry a Kotlin function in its params, which violates the "params are plain data" contract. Use `register(name, handler)` to attach project-specific rules by name (next snippet).
+
+**Applying a backend payload to a field:**
+
+```kotlin
+val registry = ruleRegistry<Map<String, Any?>>()        // 7 built-ins, no extensions
+
+// Parsed from your wire format (kotlinx-serialization JsonObject, Moshi, …) at the boundary.
+// RuleSpec is intentionally NOT @Serializable — the library does not ship a JSON layer.
+val ageSpecs = listOf(
+    RuleSpec("min", mapOf("value" to 18, "message" to "Must be 18+")),
+    RuleSpec("max", mapOf("value" to 60)),
+)
+
+KformikForm(
+    fields = mapOf(
+        "age" to Field(FieldType.Number(asInt = true), label = "Age",
+                       rules = { specs(registry, ageSpecs) }),
+    ),
+    onSubmit = { values -> /* … */ },
+)
+```
+
+**Registering a custom named rule (sync or async):**
+
+```kotlin
+val registry = ruleRegistry<Map<String, Any?>> {
+    register("serverUniqueCheck") { params ->
+        val msg = params.stringOrNull("message") ?: "Already taken"
+        custom("serverUniqueCheck") { value, _ ->
+            val s = value as? String ?: return@custom null
+            if (s.isBlank()) return@custom null
+            // suspend calls work directly — the DSL's custom { } lambda is already suspend.
+            // The controller's existing cancellation + onError plumbing covers registry-built rules.
+            if (userApi.isTaken(s)) msg else null
+        }
+    }
+}
+```
+
+**Aliases for backend/client name mismatches:**
+
+```kotlin
+val registry = ruleRegistry<Map<String, Any?>> {
+    alias(from = "length_min", to = "minLength")    // backend ships snake_case
+    alias(from = "length_max", to = "maxLength")
+}
+// A spec with name "length_min" now resolves to the canonical minLength handler.
+// FieldRule.name in the resulting schema is the CANONICAL "minLength", so
+// schema.fieldInfo / isRequired / requiredFields stay deterministic regardless of which
+// alias the consumer used at the call site.
+```
+
+Re-declaring the same alias `from` overwrites the previous mapping (last-write-wins, mirroring `register`). Cycles (`a → b; b → a`) and chains longer than 8 alias edges are caught at `build()` time with `RuleResolutionException`.
+
+**Unknown-rule policy + observability for prod rollouts:**
+
+```kotlin
+val registry = ruleRegistry<Map<String, Any?>> {
+    unknownRulePolicy(UnknownRulePolicy.Skip)               // don't throw; drop the spec
+    onUnknownRule { spec -> Logger.warn("Skipped: ${spec.name}") }  // fire once per skip
+    register("serverUniqueCheck") { params -> /* … */ }
+}
+```
+
+The default policy is `UnknownRulePolicy.Throw` — a misconfigured / stale-client spec crashes the form loudly during composition, before any user sees broken validation. `Skip` is opt-in for cases where the backend may ship new rule names ahead of the client; wire `onUnknownRule` alongside it (silent Skip is debugging-hostile). The callback fires once per skipped `RuleSpec` resolution; if your callback itself throws, that exception propagates out (no defensive try/catch around it).
+
+**Param coercion.** `RuleParams` is the typed view over `RuleSpec.params: Map<String, Any?>`. Numeric accessors (`int`, `long`, `double`, `number`) accept any `Number` and narrow exact-only — important because kotlinx-serialization decodes JSON integers as `Long` and decimals as `Double`. The exact-only narrowing means:
+
+- `params.int("value")` succeeds for `18`, `18L`, or `18.0`; throws on `18.5` (fractional), `Long.MAX_VALUE` (overflow), `"18"` (String type mismatch), `NaN`.
+- `params.long("value")` rejects the `Long.MAX_VALUE` Double boundary specifically (since `Long.MAX_VALUE.toDouble()` rounds up to 2⁶³ and is not a valid Long).
+- `params.regex("value")` accepts either a `Regex` directly or a `String` it can compile.
+- `*OrNull` accessors return `null` for absent **or** explicit-null keys, throw `RuleParamException` for type mismatch. Use `"key" in params` to distinguish absent from null.
+
+**Schema-build-time vs validate-time errors.** Both `RuleResolutionException` (unknown rule with `Throw` policy, alias cycle, alias chain too deep) and `RuleParamException` (missing required param, type mismatch) are thrown at **schema-build time** — when `formSchema { … }` runs during composition. They are **not** routed through `FormikConfig.onError`, because misconfigured specs are programming errors that should crash loudly in dev/staging. Errors from the validation phase (e.g. a registered rule's `custom { … }` lambda throwing while validating) DO route through `onError`, exactly like hand-written DSL rules.
+
+**Mixing specs and inline DSL on the same field** — the `rules` lambda is just Kotlin, source-ordered:
+
+```kotlin
+Field(FieldType.Email, required = true, rules = {
+    specs(registry, backendSpecs)                   // backend baseline first
+    custom("notDisposable") { v, _ ->               // local polish appended after
+        val s = v as? String ?: return@custom null
+        if (s.endsWith("@disposable.example")) "No disposable emails" else null
+    }
+})
+```
+
+`Field.required = true` still auto-injects a `required()` rule once — including the case where a backend spec also says `{"name": "required"}` (the existing two-pass dedupe inspects rule names regardless of source, so spec-required and DSL-required collapse to one).
+
+The included `BackendDrivenRulesScreen` in `:sample-forms-cmp-app` demonstrates the whole flow end to end against a simulated `delay(300)` fetch — a custom `serverUniqueCheck` rule, a `length_min → minLength` alias, and a backend payload driving three fields.
 
 ## Typed values with KSP
 

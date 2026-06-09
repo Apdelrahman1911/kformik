@@ -4,6 +4,26 @@ All notable changes are documented here. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-06-09
+
+### Added
+
+- **Pluggable validation-rules registry.** New `:kformik` types `RuleSpec`, `RuleParams`, `RuleRegistry`, `RuleRegistryBuilder`, `UnknownRulePolicy`, `RuleResolutionException`, `RuleParamException`, the `RuleHandler<V>` typealias, top-level `ruleRegistry { … }` / `emptyRuleRegistry { … }` factories, and `FieldRulesBuilder.spec(...)` / `FieldRulesBuilder.specs(...)` extension functions. Consumers can now apply backend-driven validation rules (e.g. `{"name": "min", "params": {"value": 18}}`) without hardcoding each constraint at the call site, register custom named rules (sync OR async — both compose via the existing `custom { … }` DSL), and alias backend rule names to local validators with build-time cycle detection. `ruleRegistry { }` seeds 7 declarative built-ins (`required`, `minLength`, `maxLength`, `email`, `pattern`, `min`, `max`); `custom` / `customValue` intentionally stay in the DSL only (they can't be safely carried in plain-data params). Default behaviour for unknown rule names is `UnknownRulePolicy.Throw` at schema-build time — catches client/server skew in dev/staging; opt into `UnknownRulePolicy.Skip` + `onUnknownRule { … }` for graceful prod rollouts. Integration with the existing `:kformik-forms` layer is via the unchanged `Field.rules` lambda — `Field(rules = { specs(registry, backendSpecs) })` — so `Field` and `KformikForm` public APIs are **completely unchanged**; no data-class ABI churn, no Composable signature breaks, no compatibility shims. See `README.md` › Backend-driven rules and the new `Backend-driven rules — RuleRegistry + RuleSpec` showcase screen.
+
+### Tests
+
+- **4 new test files in `:kformik/commonTest`**: `RuleParamsTest.kt` (28 tests covering Int/Long/Double exact-narrowing, JSON-style Long→Int coercion, fractional/overflow/type-mismatch/NaN throws, the `Long.MAX_VALUE.toDouble()` boundary case, missing-key vs explicit-null distinction, Regex compilation from String pattern, extra-unused-param tolerance), `RuleRegistryTest.kt` (28 tests covering register/alias/cycle detection/8-edge-resolves vs 9-edge-throws depth cap/alias-redeclaration last-write-wins/alias-to-user-registered-handler/unknown-rule policies/observability callback/handler-throws-synchronously/onUnknownRule-callback-throws/duplicate-spec-no-dedupe/spec-DSL coexistence/alias-resolves-to-canonical-name), `DefaultRuleRegistryTest.kt` (13 tests confirming the 7 built-ins resolve correctly, `custom` is NOT a registry citizen, the `message` param overrides default for every built-in, Long-from-JSON works for `min`), `RegistryIntegrationTest.kt` (4 tests proving the registry composes cleanly with the live controller: async rule throws routed to `onError`, async rule cancellation on superseding change with strict-proof-of-suspension-entry pinning, spec + inline DSL coexistence at runtime, registered rule surfacing errors through the change pipeline).
+- **3 new tests in `:kformik-forms/jvmTest/FormSchemaBuilderTest.kt`** pinning the forms-layer integration without any `:kformik-forms` library changes: `specs_throughField_rulesLambda_attachToCorrectPath`, `requiredFlagDedupes_withSpecRequired_viaExistingTwoPass` (Field.required=true + a spec-`required` produces exactly one required rule via the existing two-pass dedupe — works for free because spec-resolved rules go through the same DSL the dedupe already inspects), `specs_andInlineDsl_coexist_inSameRulesLambda`.
+
+### Coordinates
+
+```
+io.github.apdelrahman1911:kformik:1.10.0
+io.github.apdelrahman1911:kformik-compose:1.10.0
+io.github.apdelrahman1911:kformik-forms:1.10.0
+io.github.apdelrahman1911:kformik-ksp:1.10.0
+```
+
 ## [1.9.3] — 2026-06-08
 
 ### Fixed

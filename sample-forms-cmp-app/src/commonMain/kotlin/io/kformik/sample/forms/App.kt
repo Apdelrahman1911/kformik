@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import io.kformik.sample.forms.screens.BackendDrivenRulesScreen
 import io.kformik.sample.forms.screens.CustomAndAsyncScreen
 import io.kformik.sample.forms.screens.LoginScreen
 import io.kformik.sample.forms.screens.ProfileScreen
@@ -19,6 +20,7 @@ internal val DEMOS: List<Demo> = listOf(
     Demo("Signup — cross-field validation") { back -> SignupScreen(back) },
     Demo("Profile — Select / Radio / Multiline / reinitialize") { back -> ProfileScreen(back) },
     Demo("Custom + Async — renderOverride + validateAsync") { back -> CustomAndAsyncScreen(back) },
+    Demo("Backend-driven rules — RuleRegistry + RuleSpec") { back -> BackendDrivenRulesScreen(back) },
 )
 
 @Composable

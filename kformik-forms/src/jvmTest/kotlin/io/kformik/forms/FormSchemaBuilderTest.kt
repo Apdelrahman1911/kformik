@@ -1,6 +1,10 @@
 package io.kformik.forms
 
+import io.kformik.RuleSpec
 import io.kformik.buildErrors
+import io.kformik.ruleRegistry
+import io.kformik.spec
+import io.kformik.specs
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -371,5 +375,88 @@ class FormSchemaBuilderTest {
             mapOf("choice" to Field(type = FieldType.Radio(opts), initialValue = null)),
         )
         assertNull(explicit["choice"], "explicit initialValue=null is preserved verbatim for Radio too")
+    }
+
+    // -------------------------------------------------------- registry-backed rules (v1.10)
+
+    @Test
+    fun specs_throughField_rulesLambda_attachToCorrectPath() = runTest {
+        val registry = ruleRegistry<Map<String, Any?>>()
+        val fields = mapOf(
+            "age" to Field(
+                type = FieldType.Number(asInt = true),
+                rules = {
+                    specs(registry, listOf(
+                        RuleSpec("min", mapOf("value" to 18)),
+                        RuleSpec("max", mapOf("value" to 60)),
+                    ))
+                },
+            ),
+        )
+        val schema = buildSchemaFrom(fields)
+        assertEquals(listOf("min", "max"), schema.fieldInfo("age")?.rules)
+        assertNotNull(schema.validate(mapOf("age" to 17))["age"])
+        assertNull(schema.validate(mapOf("age" to 30))["age"])
+    }
+
+    /**
+     * Field.required=true triggers a two-pass auto-injection of `required()` only when the field's
+     * own rules block hasn't declared one. A backend-driven `RuleSpec("required")` resolved inside
+     * the rules lambda IS a declaration (it calls `required()` via the registered handler), so the
+     * existing dedupe machinery in `buildSchemaFrom` sees the rule and suppresses the auto-prepend.
+     * No library code change in `:kformik-forms` was needed for this — pins the spec-rules pathway
+     * to the same behaviour as the existing hand-written-DSL pathway.
+     */
+    @Test
+    fun requiredFlagDedupes_withSpecRequired_viaExistingTwoPass() = runTest {
+        val registry = ruleRegistry<Map<String, Any?>>()
+        val fields = mapOf(
+            "name" to Field(
+                type = FieldType.Text,
+                required = true,
+                rules = {
+                    spec(registry, RuleSpec("required", mapOf("message" to "Spec-required")))
+                },
+            ),
+        )
+        val schema = buildSchemaFrom(fields)
+        val info = schema.fieldInfo("name")
+        assertNotNull(info)
+        assertEquals(
+            1,
+            info.rules.count { it == "required" },
+            "required rule from a spec should NOT be duplicated by the Field.required auto-inject",
+        )
+        // The user-declared (spec-resolved) `required` wins — the auto-inject was suppressed, so
+        // the spec's custom message survives.
+        assertEquals("Spec-required", schema.validate(mapOf("name" to ""))["name"])
+    }
+
+    @Test
+    fun specs_andInlineDsl_coexist_inSameRulesLambda() = runTest {
+        val registry = ruleRegistry<Map<String, Any?>>()
+        val fields = mapOf(
+            "username" to Field(
+                type = FieldType.Text,
+                required = true,
+                rules = {
+                    specs(registry, listOf(RuleSpec("minLength", mapOf("value" to 3))))
+                    custom("noSpaces") { v, _ ->
+                        val s = v as? String ?: return@custom null
+                        if (s.contains(' ')) "no spaces" else null
+                    }
+                },
+            ),
+        )
+        val schema = buildSchemaFrom(fields)
+        // Auto-inject required (suppressed → no, because no spec-required + DSL-required); minLength + noSpaces
+        // Actually: required is auto-prepended because the rules lambda did NOT declare required.
+        assertEquals(listOf("required", "minLength", "noSpaces"), schema.fieldInfo("username")?.rules)
+
+        // Fail-fast: empty → required; "ab" → minLength; "ab c" → noSpaces; "abcd" → ok.
+        assertEquals("Required", schema.validate(mapOf("username" to ""))["username"])
+        assertEquals("Must be at least 3 characters", schema.validate(mapOf("username" to "ab"))["username"])
+        assertEquals("no spaces", schema.validate(mapOf("username" to "ab c"))["username"])
+        assertNull(schema.validate(mapOf("username" to "abcd"))["username"])
     }
 }

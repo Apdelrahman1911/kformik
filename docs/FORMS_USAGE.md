@@ -14,7 +14,7 @@ plugins {
 }
 
 dependencies {
-    implementation("io.github.apdelrahman1911:kformik-forms:1.9.0")
+    implementation("io.github.apdelrahman1911:kformik-forms:1.10.0")
 }
 ```
 
